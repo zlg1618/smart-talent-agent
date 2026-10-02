@@ -987,7 +987,7 @@ MySQL / SQLite
 
 * * *
 
-## 三十一、ATS 招聘管理
+## 三十、ATS 招聘管理
 
 ### 简历筛选打分
 
@@ -1062,7 +1062,7 @@ Offer 建议 · 曹聪 → 高级前端开发工程师
 总包：¥68,600｜compa-ratio 1.23
 ```
 
-## 三十二、HRIS 员工事务
+## 三十一、HRIS 员工事务
 
 ### 年假规则（中国劳动法）
 
@@ -1103,7 +1103,7 @@ Offer 建议 · 曹聪 → 高级前端开发工程师
 时间：2026-10-03 至 2026-10-05（3 天）｜状态：pending（申请 ID：8）
 ```
 
-## 三十三、HRIS 系统集成（SAP SuccessFactors）
+## 三十二、HRIS 系统集成（SAP SuccessFactors）
 
 ### 适配器抽象层
 
@@ -1165,7 +1165,7 @@ POST /api/integrations/leave?backend=sap_successfactors
 
 * * *
 
-## 三十、免责声明
+## 三十三、免责声明
 
 本项目仅用于学习、技术研究和项目演示。
 
