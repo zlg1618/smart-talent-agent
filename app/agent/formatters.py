@@ -361,21 +361,489 @@ def format_hr_pending(result: dict) -> str:
     return "\n".join(lines)
 
 
+def _yen(v) -> str:
+    try:
+        return f"¥{int(v):,}"
+    except (TypeError, ValueError):
+        return str(v)
+
+
+def _pct(v) -> str:
+    try:
+        return f"{round(float(v) * 100, 1)}%"
+    except (TypeError, ValueError):
+        return str(v)
+
+
+def _conclusion(result: dict) -> str:
+    return result.get("conclusion") or ""
+
+
+def format_compa(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无薪酬分析数据")
+    lines = [
+        f"薪酬公平性分析 · {result['department']} · {result['job_level']}",
+        f"参与比对 {result['employee_count']} 人，平均 compa-ratio "
+        f"{result['avg_compa_ratio']}（健康区间 {result['healthy_ratio_label']}）",
+        f"低于下限 {result['below_band_count']} 人，高于上限 {result['above_band_count']} 人",
+        "",
+    ]
+    if result["below_band"]:
+        lines.append("低于带宽下限（优先调薪对象）：")
+        for d in result["below_band"][:8]:
+            lines.append(
+                f"- {d['name']}（{d['department']} / {d['job_level']}）："
+                f"base {_yen(d['base_salary'])}，compa-ratio {d['compa_ratio']}"
+            )
+    if result["above_band"]:
+        lines.append("")
+        lines.append("高于带宽上限（建议冻结固定薪）：")
+        for d in result["above_band"][:8]:
+            lines.append(
+                f"- {d['name']}（{d['department']} / {d['job_level']}）："
+                f"base {_yen(d['base_salary'])}，compa-ratio {d['compa_ratio']}"
+            )
+    lines.append("")
+    lines.append(_conclusion(result))
+    return "\n".join(lines)
+
+
+def format_salary_adjustment(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无调薪模拟数据")
+    lines = [
+        f"调薪预算模拟 · {result['department']}",
+        f"调薪池 {result['budget_pct']}% = {_yen(result['budget_amount'])}，"
+        f"可为 {result['adjusted_count']} 人补齐，支出 {_yen(result['used_amount'])}，"
+        f"剩余 {_yen(result['remain_amount'])}",
+        "",
+    ]
+    for p in result["plan"][:10]:
+        lines.append(
+            f"- {p['name']}（{p['department']} / {p['job_level']}）："
+            f"{_yen(p['current_base'])} → +{_yen(p['grant'])}（+{p['raise_pct']}%），"
+            f"调整后 compa-ratio {p['new_compa_ratio']}"
+        )
+    if result["unaddressed_count"]:
+        lines.append("")
+        lines.append(f"另有 {result['unaddressed_count']} 人因预算不足未覆盖。")
+    lines.append("")
+    lines.append(_conclusion(result))
+    return "\n".join(lines)
+
+
+def format_benefits(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无福利数据")
+    lines = [
+        f"福利覆盖分析 · {result['department']}",
+        f"在职 {result['employee_count']} 人，{result['plan_count']} 项福利"
+        f"（核心 {result['core_plan_count']} 项），人均年成本 "
+        f"{_yen(result['avg_cost_per_head'])}",
+        "",
+    ]
+    for r in result["plans"][:10]:
+        flag = "［核心］" if r["is_core"] else "［可选］"
+        lines.append(
+            f"- {flag} {r['plan_name']}（{r['category']}）：参保 {r['enrolled']} 人，"
+            f"覆盖率 {_pct(r['coverage_rate'])}，{r['gap']}"
+        )
+    lines.append("")
+    lines.append(_conclusion(result))
+    return "\n".join(lines)
+
+
+def format_compensation_summary(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无该员工薪酬数据")
+    e = result["employee"]
+    lines = [
+        f"薪酬总览 · {e['name']}（{e['department']} / {e['position_title']} / {e['job_level']}）",
+        f"生效日期 {result['effective_date']}",
+        "",
+        f"固定薪　　　{_yen(result['base_salary'])}",
+        f"目标奖金　　{_yen(result['target_bonus'])}（比例 {result['target_bonus_pct']}%）",
+        f"长期激励　　{_yen(result['equity_value'])}",
+        f"总现金薪酬　{_yen(result['tcc'])}",
+        f"福利成本　　{_yen(result['benefit_cost'])}",
+        f"总直接薪酬　{_yen(result['tdc'])}",
+        "",
+        f"带宽位置：compa-ratio {result['compa_ratio']}，"
+        f"处于带宽的 {round(result['penetration'] * 100)}% 位置",
+    ]
+    if result["benefits"]:
+        lines.append("")
+        lines.append(
+            "已享福利："
+            + "、".join(f"{b['name']}（{_yen(b['cost'])}）" for b in result["benefits"])
+        )
+    lines.append("")
+    lines.append(_conclusion(result))
+    return "\n".join(lines)
+
+
+def format_performance_goal(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无目标达成数据")
+    lines = [
+        f"目标达成分析 · {result['period']} · {result['department']}",
+        f"跟踪 {result['goal_count']} 条目标，覆盖 {result['employee_count']} 人，"
+        f"平均达成率 {_pct(result['avg_achievement'])}",
+        "",
+        "达成率最高：",
+    ]
+    for r in result["top10"][:5]:
+        lines.append(
+            f"- {r['name']}（{r['department']}）：{_pct(r['achievement_rate'])}，"
+            f"{r['completed_count']}/{r['goal_count']} 条已完成"
+        )
+    if result["bottom10"]:
+        lines.append("")
+        lines.append("达成率最低：")
+        for r in result["bottom10"][-5:]:
+            lines.append(
+                f"- {r['name']}（{r['department']}）：{_pct(r['achievement_rate'])}，"
+                f"{r['at_risk_count']} 条处于风险"
+            )
+    lines.append("")
+    lines.append(_conclusion(result))
+    return "\n".join(lines)
+
+
+def format_performance_deviation(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无评价偏差数据")
+    lines = [
+        f"绩效认知偏差 · {result['period']} · {result['department']}",
+        f"{result['review_count']} 条评估，平均绝对偏差 {result['avg_abs_gap']} 分，"
+        f"其中 {result['big_gap_count']} 人偏差超过 1 分",
+        "",
+    ]
+    for x in result["big_gap_people"][:8]:
+        lines.append(
+            f"- {x['name']}（{x['department']}）：自评 {x['self_score']} / "
+            f"主管评 {x['manager_score']}，偏差 {x['delta']}（{x['kind']}）"
+        )
+    lines.append("")
+    lines.append(_conclusion(result))
+    return "\n".join(lines)
+
+
+def format_performance_distribution(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无分布校验数据")
+    lines = [
+        f"强制分布校验 · {result['period']} · {result['department']}",
+        f"参与校准 {result['total_reviewed']} 人，"
+        f"{result['deviation_count']} 个等级偏离标准",
+        "",
+    ]
+    for r in result["distribution"]:
+        flag = "OK" if r["within_standard"] else "偏离"
+        lines.append(
+            f"- {r['rating']}：{r['count']} 人（{_pct(r['share'])}），"
+            f"标准 {_pct(r['standard'][0])}~{_pct(r['standard'][1])}　{flag}"
+        )
+    if result["deviations"]:
+        lines.append("")
+        lines.append("调整建议：")
+        for d in result["deviations"]:
+            lines.append(
+                f"- {d['rating']} {d['direction']}，建议调整约 "
+                f"{d['adjust_count']} 人：{d['advice']}"
+            )
+    lines.append("")
+    lines.append(_conclusion(result))
+    return "\n".join(lines)
+
+
+def format_improvement(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无改进计划数据")
+    lines = [
+        f"绩效改进计划 · {result['department']}",
+        f"共 {result['total']} 份：进行中 {result['ongoing']}、"
+        f"已通过 {result['passed']}、未通过 {result['failed']}",
+        "",
+    ]
+    for p in result["people"][:10]:
+        lines.append(
+            f"- {p['name']}（{p['department']}）：目标 {p['target_score']} / "
+            f"当前 {p['current_score']}，差 {p['gap']}　{p['outcome']}"
+        )
+    lines.append("")
+    lines.append(_conclusion(result))
+    return "\n".join(lines)
+
+
+def format_relation_cases(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无关系事件数据")
+    lines = [
+        f"员工关系事件 · {result['department']}",
+        f"共 {result['total_cases']} 起，未闭环 {result['open_cases']} 起，"
+        f"超期 {result['overdue_cases']} 起，"
+        f"高升级风险 {result['high_escalation_risk']} 起",
+        "",
+    ]
+    if result["overdue_list"]:
+        lines.append("已超期：")
+        for r in result["overdue_list"][:8]:
+            lines.append(
+                f"- {r['employee']}（{r['department']}）：{r['case_type']}，"
+                f"已开 {r['days_open']} 天（时限 {r['sla_days']} 天），级别 {r['severity']}"
+            )
+    if result["high_risk_list"]:
+        lines.append("")
+        lines.append("升级风险较高：")
+        for r in result["high_risk_list"][:8]:
+            lines.append(
+                f"- {r['employee']}（{r['department']}）：{r['case_type']}，"
+                f"风险系数 {r['escalation_risk']}"
+            )
+    lines.append("")
+    lines.append(_conclusion(result))
+    return "\n".join(lines)
+
+
+def format_engagement(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无敬业度数据")
+    lines = [
+        f"敬业度分析 · {result['period']} · {result['department']}",
+        f"样本 {result['survey_count']} 人，平均 {result['avg_score']} 分，"
+        f"eNPS {result['enps']}（推荐者 {result['promoter_percent']}%）",
+        "",
+        "五维得分：",
+    ]
+    for d in result["dimension_scores"]:
+        lines.append(f"- {d['dimension']}：{d['score']} 分")
+    if result["low_score_people"]:
+        lines.append("")
+        lines.append("低分预警（低于 3 分）：")
+        for p in result["low_score_people"][:8]:
+            lines.append(
+                f"- {p['name']}（{p['department']}）：{p['overall_score']} 分，"
+                f"最弱维度「{p['lowest_dimension']}」{p['lowest_score']} 分"
+            )
+    lines.append("")
+    lines.append(_conclusion(result))
+    return "\n".join(lines)
+
+
+def format_learning_overview(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无培训数据")
+    return "\n".join(
+        [
+            f"培训总览 · {result['department']}",
+            f"在职 {result['employee_count']} 人，报名 "
+            f"{result['enrollment_count']} 人次，完成 {result['completed_count']} 人次",
+            f"覆盖率 {_pct(result['training_coverage'])}，"
+            f"完课率 {_pct(result['completion_rate'])}",
+            f"累计学时 {result['total_hours']} 小时，人均培训成本 "
+            f"{_yen(result['avg_cost_per_employee'])}",
+            "",
+            _conclusion(result),
+        ]
+    )
+
+
+def format_learning_compliance(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无必修合规数据")
+    lines = [
+        f"必修培训合规 · {result['department']}",
+        f"必修 {result['mandatory_course_count']} 门，应完成 "
+        f"{result['required_completions']} 人次，"
+        f"实际完成 {result['actual_completions']} 人次，"
+        f"合规率 {_pct(result['compliance_rate'])}",
+        "",
+    ]
+    for g in result["gaps"][:10]:
+        lines.append(
+            f"- {g['name']}（{g['department']}）：缺 {g['missing_count']} 门，"
+            f"需补训 {g['missing_hours']} 学时"
+        )
+    lines.append("")
+    lines.append(_conclusion(result))
+    return "\n".join(lines)
+
+
+def format_learning_recommend(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无推荐数据")
+    e = result["employee"]
+    lines = [
+        f"课程推荐 · {e['name']}（{e['department']} / {e['position_title']}）",
+        f"存在 {result['gap_count']} 项能力差距",
+        "",
+    ]
+    for g in result["gaps"][:6]:
+        lines.append(
+            f"- {g['competency']}：现 {g['current_level']} 级 → 目标 "
+            f"{g['required_level']} 级（差 {g['gap']} 级）"
+        )
+    lines.append("")
+    lines.append("推荐课程：")
+    for r in result["recommendations"]:
+        lines.append(
+            f"- ［{r['priority']}优先］{r['course']}（{r['delivery_mode']}，"
+            f"{r['duration_hours']} 学时，{_yen(r['cost_per_head'])}）"
+        )
+    lines.append("")
+    lines.append(f"合计 {result['total_hours']} 学时，预算 {_yen(result['total_cost'])}")
+    lines.append(_conclusion(result))
+    return "\n".join(lines)
+
+
+def format_learning_effect(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无培训效果数据")
+    lines = [
+        f"培训效果评估 · {result['department']}",
+        f"{result['course_count']} 门课程，{result['total_enrollments']} 人次，"
+        f"总投入 {_yen(result['total_cost'])}",
+        "",
+    ]
+    for r in result["courses"][:10]:
+        lines.append(
+            f"- {r['course_name']}（{r['category']}）：通过率 {_pct(r['pass_rate'])}，"
+            f"平均 {r['avg_score']} 分，满意度 {r['avg_feedback']}"
+        )
+    lines.append("")
+    lines.append(_conclusion(result))
+    return "\n".join(lines)
+
+
+def format_headcount(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无编制数据")
+    lines = [
+        f"编制达成审查 · {result['period']} · {result['department']}",
+        f"整体达成率 {_pct(result['overall_fill_rate'])}"
+        f"（在编 {result['total_actual']} / 编制 {result['total_planned']}），"
+        f"缺口 {result['total_gap']} 人",
+        "",
+    ]
+    for r in result["plans"]:
+        lines.append(
+            f"- {r['department']}：{r['actual']}/{r['planned']} 人（{r['status']}），"
+            f"缺口 {r['gap']} 人，在招 {r['open_reqs']} 个，"
+            f"预算执行 {_pct(r['budget_usage'])}"
+        )
+    lines.append("")
+    lines.append(_conclusion(result))
+    return "\n".join(lines)
+
+
+def format_forecast(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无人力预测数据")
+    lines = [
+        f"人力供需预测 · {result['scenario']} 情景 · {result['department']}",
+        f"净需求 {result['total_net_demand']} 人，内部可供给 "
+        f"{result['total_internal_supply']} 人，"
+        f"需外部招聘 {result['total_external_hire']} 人",
+        "",
+    ]
+    for r in result["rows"][:8]:
+        lines.append(
+            f"- {r['department']} / {r['job_level']}：净需求 {r['net_demand']} 人，"
+            f"内部供给 {r['internal_supply']} 人，"
+            f"外部需 {r['external_hire_need']} 人（{r['status']}）"
+        )
+    lines.append("")
+    lines.append(_conclusion(result))
+    return "\n".join(lines)
+
+
+def format_attrition(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无离职风险数据")
+    lines = [
+        f"离职风险扫描 · {result['department']}",
+        f"扫描 {result['scanned_count']} 人，高风险 {result['high_risk_count']} 人，"
+        f"中风险 {result['medium_risk_count']} 人，"
+        f"其中关键岗位 {result['critical_position_risk']} 人",
+        "",
+    ]
+    for p in result["people"][:10]:
+        lines.append(
+            f"- {p['name']}（{p['department']} / {p['position_title']}）："
+            f"风险 {p['risk_score']}（{p['risk_level']}），"
+            f"首要因子「{p['top_factor_label']}」"
+        )
+    if result["critical_position_people"]:
+        lines.append("")
+        lines.append("关键岗位高风险（最高优先级）：")
+        for p in result["critical_position_people"][:5]:
+            lines.append(f"- {p['name']}：建议 {p['retention_action']}")
+    lines.append("")
+    lines.append(_conclusion(result))
+    return "\n".join(lines)
+
+
+def format_succession_link(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无继任联动数据")
+    lines = [
+        "离职风险 × 继任覆盖交叉分析",
+        f"高风险 {result['high_risk_total']} 人中，"
+        f"{result['uncovered_high_risk']} 人所在岗位没有继任候选人",
+        "",
+    ]
+    for p in result["uncovered_people"][:10]:
+        lines.append(
+            f"- {p['name']}（{p['department']} / {p['position_title']}）："
+            f"风险 {p['risk_score']}"
+        )
+    lines.append("")
+    lines.append(_conclusion(result))
+    return "\n".join(lines)
+
+
 FORMATTERS = {
+    # 人才管理与组织发展
     "TALENT_REVIEW": format_talent_review,
     "SUCCESSION": format_succession,
     "PIPELINE": format_pipeline,
     "IDP": format_idp,
     "DIAGNOSIS": format_diagnosis,
-    "ATS_SCREEN": format_ats_screen,
-    "ATS_OFFER": format_ats_offer,
-    "ATS_FUNNEL": format_ats_funnel,
-    "ATS_INTERVIEW": format_ats_interview,
-    "HR_LEAVE_BALANCE": format_hr_leave_balance,
-    "HR_LEAVE_REQUEST": format_hr_leave_request,
-    "HR_LEAVE_APPROVE": format_hr_leave_approve,
-    "HR_ATTENDANCE": format_hr_attendance,
-    "HR_LEAVE_PENDING": format_hr_pending,
+    # HRIS · 招聘管理
+    "HRIS_RECRUITMENT_SCREEN": format_ats_screen,
+    "HRIS_RECRUITMENT_OFFER": format_ats_offer,
+    "HRIS_RECRUITMENT_FUNNEL": format_ats_funnel,
+    "HRIS_RECRUITMENT_INTERVIEW": format_ats_interview,
+    # HRIS · 薪酬与福利
+    "HRIS_COMPENSATION_COMPA": format_compa,
+    "HRIS_COMPENSATION_ADJUSTMENT": format_salary_adjustment,
+    "HRIS_COMPENSATION_BENEFITS": format_benefits,
+    "HRIS_COMPENSATION_SUMMARY": format_compensation_summary,
+    # HRIS · 绩效管理
+    "HRIS_PERFORMANCE_GOAL": format_performance_goal,
+    "HRIS_PERFORMANCE_DEVIATION": format_performance_deviation,
+    "HRIS_PERFORMANCE_DISTRIBUTION": format_performance_distribution,
+    "HRIS_PERFORMANCE_IMPROVEMENT": format_improvement,
+    # HRIS · 员工关系管理
+    "HRIS_ER_LEAVE_BALANCE": format_hr_leave_balance,
+    "HRIS_ER_LEAVE_REQUEST": format_hr_leave_request,
+    "HRIS_ER_LEAVE_APPROVE": format_hr_leave_approve,
+    "HRIS_ER_ATTENDANCE": format_hr_attendance,
+    "HRIS_ER_LEAVE_PENDING": format_hr_pending,
+    "HRIS_ER_CASES": format_relation_cases,
+    "HRIS_ER_ENGAGEMENT": format_engagement,
+    # HRIS · 培训与开发
+    "HRIS_LEARNING_OVERVIEW": format_learning_overview,
+    "HRIS_LEARNING_COMPLIANCE": format_learning_compliance,
+    "HRIS_LEARNING_RECOMMEND": format_learning_recommend,
+    "HRIS_LEARNING_EFFECT": format_learning_effect,
+    # HRIS · 人力资源规划
+    "HRIS_WORKFORCE_HEADCOUNT": format_headcount,
+    "HRIS_WORKFORCE_FORECAST": format_forecast,
+    "HRIS_WORKFORCE_ATTRITION": format_attrition,
+    "HRIS_WORKFORCE_SUCCESSION_LINK": format_succession_link,
 }
 
 # CHAT 也会经过 generate_answer；为安全起见提供兜底

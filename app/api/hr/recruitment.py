@@ -1,12 +1,12 @@
-"""ATS 接口：简历筛选、智能定薪、面试安排、漏斗统计。"""
+"""HRIS · 招聘管理域接口：JD、简历筛选、Offer、面试、漏斗。"""
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.config.database import get_db
-from app.tools import ats_tool
+from app.tools import recruitment_tool
 
-router = APIRouter(prefix="/api/ats", tags=["ATS"])
+router = APIRouter(prefix="/recruitment", tags=["HRIS-招聘管理"])
 
 
 @router.get("/jobs")
@@ -19,6 +19,7 @@ def jobs(db: Session = Depends(get_db)):
     return [
         {
             "id": j.id,
+            "req_no": j.req_no,
             "title": j.title,
             "department": j.department,
             "headcount": j.headcount,
@@ -41,8 +42,8 @@ def screen(
 ):
     message = f"{candidate or ''} {job}".strip()
     if candidate:
-        return ats_tool.run_screen_candidate(db, message)
-    return ats_tool.run_screen_for_job(db, message)
+        return recruitment_tool.run_screen_candidate(db, message)
+    return recruitment_tool.run_screen_for_job(db, message)
 
 
 @router.post("/offer")
@@ -52,8 +53,7 @@ def offer(
     save: bool = Query(False, description="是否落库 Offer 记录"),
     db: Session = Depends(get_db),
 ):
-    message = f"{candidate} {job}"
-    return ats_tool.run_suggest_offer(db, message, save=save)
+    return recruitment_tool.run_suggest_offer(db, f"{candidate} {job}", save=save)
 
 
 @router.get("/funnel")
@@ -61,7 +61,7 @@ def funnel(
     department: str | None = Query(None, description="部门过滤"),
     db: Session = Depends(get_db),
 ):
-    return ats_tool.run_funnel(db, department=department)
+    return recruitment_tool.run_funnel(db, department=department)
 
 
 @router.post("/interview/proposal")
@@ -69,4 +69,4 @@ def interview_proposal(
     job: str = Query(..., description="岗位标题"),
     db: Session = Depends(get_db),
 ):
-    return ats_tool.run_interview_proposal(db, job)
+    return recruitment_tool.run_interview_proposal(db, job)

@@ -1,4 +1,4 @@
-"""HRIS 事务 Tool：年假余额、提交/批准请假、考勤汇总。"""
+"""HRIS · 员工关系管理域 Tool：假期、考勤、关系事件、敬业度。"""
 
 from datetime import date, timedelta
 
@@ -6,8 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Employee
-from app.services import hr_transaction_service
-from app.tools.ats_tool import _DAYS_RE
+from app.services import employee_relations_service
+from app.tools.recruitment_tool import _DAYS_RE
 
 
 TYPE_KEYWORDS = {
@@ -61,7 +61,7 @@ def run_leave_balance(db: Session, message: str, employee_name: str | None = Non
         )
     if not employee_name:
         return {"error": "请告诉我要查询哪位员工的年假，例如：张伟的年假余额"}
-    return hr_transaction_service.get_leave_balance(db, employee_name)
+    return employee_relations_service.get_leave_balance(db, employee_name)
 
 
 def run_submit_leave(
@@ -91,7 +91,7 @@ def run_submit_leave(
         }
 
     reason = message
-    return hr_transaction_service.submit_leave_request(
+    return employee_relations_service.submit_leave_request(
         db, employee_name, leave_type, start, end, reason
     )
 
@@ -114,9 +114,9 @@ def run_approve_leave(
         approver_name = approver.name if approver else "admin"
 
     if reject:
-        return hr_transaction_service.approve_leave(db, leave_id, approver_name, approve=False)
+        return employee_relations_service.approve_leave(db, leave_id, approver_name, approve=False)
     if approve:
-        return hr_transaction_service.approve_leave(db, leave_id, approver_name, approve=True)
+        return employee_relations_service.approve_leave(db, leave_id, approver_name, approve=True)
     return {"error": "请说「批准请假申请 N」或「拒绝请假申请 N」"}
 
 
@@ -129,8 +129,34 @@ def run_attendance(
             employee_name = emp.name
     if not employee_name:
         return {"error": "请告诉我要查询哪位员工的考勤，例如：李伟的查询能力"}
-    return hr_transaction_service.get_attendance_summary(db, employee_name)
+    return employee_relations_service.get_attendance_summary(db, employee_name)
 
 
 def run_pending_leaves(db: Session, message: str) -> dict:
-    return {"pending": hr_transaction_service.list_pending_leaves(db)}
+    return {"pending": employee_relations_service.list_pending_leaves(db)}
+
+
+def run_relation_cases(db: Session, message: str, department: str | None = None) -> dict:
+    if not department:
+        department = _find_department(db, message)
+    return employee_relations_service.relation_case_analysis(db, department=department)
+
+
+def run_engagement(db: Session, message: str, department: str | None = None) -> dict:
+    if not department:
+        department = _find_department(db, message)
+    return employee_relations_service.engagement_analysis(db, department=department)
+
+
+def _find_department(db: Session, message: str) -> str | None:
+    """从消息里猜部门：优先全名匹配。"""
+    departments = [
+        d[0]
+        for d in db.execute(select(Employee.department).distinct()).all()
+        if d[0]
+    ]
+    departments.sort(key=len, reverse=True)
+    for dep in departments:
+        if dep in message:
+            return dep
+    return None

@@ -42,24 +42,52 @@ def get_db():
 def init_db():
     """建表。导入所有模型后再调用，否则表不会被创建。"""
     from app.models import (  # noqa: F401
-        Application,
-        AttendanceRecord,
-        Candidate,
-        CandidateSkill,
-        Competency,
-        Course,
-        DepartmentMetric,
-        Employee,
-        EmployeeCompetency,
-        IDP,
-        InterviewSchedule,
-        JobPost,
-        KeyPosition,
-        LeaveRequest,
-        OfferRecord,
-        PerformanceRecord,
-        PotentialAssessment,
-        SuccessionPlan,
-    )
+    Application,
+    AttritionRisk,
+    AttendanceRecord,
+    BenefitPlan,
+    CalibrationSession,
+    Candidate,
+    CandidateSkill,
+    Competency,
+    Course,
+    DepartmentMetric,
+    Employee,
+    EmployeeBenefit,
+    EmployeeCompensation,
+    EmployeeCompetency,
+    EngagementSurvey,
+    HeadcountPlan,
+    IDP,
+    ImprovementPlan,
+    InterviewSchedule,
+    JobPost,
+    KeyPosition,
+    LeaveRequest,
+    OfferRecord,
+    PerformanceGoal,
+    PerformanceRecord,
+    PerformanceReview,
+    PotentialAssessment,
+    RelationCase,
+    SalaryBand,
+    SuccessionPlan,
+    TrainingCourse,
+    TrainingEnrollment,
+    WorkforceForecast,
+)
 
     Base.metadata.create_all(bind=engine)
+    _sync_sqlite_columns()
+
+
+def _sync_sqlite_columns() -> None:
+    """SQLite 不会自动加列，建表后补齐模型新增的列。"""
+    try:
+        from app.config.migrate import add_missing_columns
+
+        added = add_missing_columns(engine)
+        if added:
+            print(f"[schema] 已补齐 {len(added)} 个列")
+    except Exception as exc:  # 迁移失败不应阻断启动
+        print(f"[schema] 列同步跳过：{exc}")

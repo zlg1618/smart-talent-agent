@@ -20,6 +20,9 @@ class ChatResponse(BaseModel):
     message: str
     request_type: Optional[str] = None
     active_topic: Optional[str] = None
+    # HRIS 子模块：recruitment / compensation / performance /
+    # employee_relations / learning / workforce
+    hris_module: Optional[str] = None
     conditions: dict[str, Any] = {}
     preferences: dict[str, Any] = {}
     result: Optional[dict[str, Any]] = None

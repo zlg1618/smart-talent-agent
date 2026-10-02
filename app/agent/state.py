@@ -12,8 +12,11 @@ class AgentState(TypedDict, total=False):
     user_message: str
 
     # 意图
-    request_type: str  # TALENT_REVIEW / SUCCESSION / IDP / DIAGNOSIS / UPDATE / PREFERENCE / CHAT
+    request_type: str  # TALENT_REVIEW / SUCCESSION / IDP / DIAGNOSIS / HRIS / UPDATE / PREFERENCE / CHAT
     active_topic: str  # 最近一次业务意图，用于修改条件后重新执行
+    hris_module: Optional[str]
+    # HRIS 子模块：recruitment / compensation / performance /
+    # employee_relations / learning / workforce
 
     # 盘点条件（跨轮次记忆）
     department: Optional[str]

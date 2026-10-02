@@ -20,21 +20,69 @@ INTENT_KEYWORDS = [
         "TALENT_REVIEW",
         ["盘点", "九宫格", "人才地图", "绩效潜力", "人才分布", "明星人才", "高潜"],
     ),
-    (
-        "ATS",
-        [
-            "招聘", "简历筛选", "简历筛选", "候选人", "ATS", "offer", "Offer",
-            "漏斗", "JD", "招聘需求", "定薪", "智能定薪", "面试安排", "招聘进展",
-        ],
-    ),
-    (
-        "HR_TRANSACTION",
-        ["请假", "年假", "病假", "事假", "考勤", "出勤", "迟到", "调休", "产假", "陪产假"],
-    ),
+    ("HRIS", ["HRIS", "人力资源", "人事", "HR 系统"]),
 ]
 
 UPDATE_KEYWORDS = ["改成", "改为", "修改为", "换成", "切换", "改成 ", "更新为", "改成"]
 PREFERENCE_KEYWORDS = ["只看", "只要", "仅仅看", "排除", "不考虑", "不包括", "剔除"]
+
+# HRIS 六大子模块的关键词路由表。
+# 顺序即优先级：越具体的短语排越前，避免"招聘开会"被归入员工关系。
+HRIS_MODULE_KEYWORDS = [
+    (
+        "recruitment",
+        [
+            "简历筛选", "候选人", "招聘需求", "面试安排", "招聘漏斗", "漏斗",
+            "定 Offer", "智能定薪", "Offer", "offer", "JD", "招聘",
+            "录用", "人才甄选", "筛选简历",
+        ],
+    ),
+    (
+        "compensation",
+        [
+            "薪酬", "薪资", "调薪", "compa", "公平性", "福利", "参保", "带宽",
+            "定薪", "奖金", "股权", "总包", "五险一金", "体检",
+        ],
+    ),
+    (
+        "performance",
+        [
+            "绩效", "OKR", "okr", "KPI", "kpi", "目标达成", "绩效校准", "校准",
+            "强制分布", "PIP", "pip", "改进计划", "自评", "绩效面谈", "绩效评价",
+        ],
+    ),
+    (
+        "learning",
+        [
+            "培训", "课程", "课", "必修", "学习", "学时", "报名", "讲师", "赋能",
+            "能力差距", "培训计划", "训练营", "补训", "上课",
+        ],
+    ),
+    (
+        "employee_relations",
+        [
+            "请假", "年假", "病假", "事假", "调休", "产假", "陪产假", "考勤",
+            "出勤", "迟到", "缺勤", "关系事件", "纠纷", "申诉", "敬业度", "满意度调查",
+        ],
+    ),
+    (
+        "workforce",
+        [
+            "编制", "人力规划", "供需", "预测", "离职风险", "人力缺口", "headcount",
+            "招聘规划", "人才盘点需求", "扩编",
+        ],
+    ),
+]
+
+
+def rule_hris_module(message: str) -> str | None:
+    """在 HRIS 域内决定具体走哪个子模块，命中不了返回 None。"""
+    text = message or ""
+    for module, keywords in HRIS_MODULE_KEYWORDS:
+        for k in keywords:
+            if k in text:
+                return module
+    return None
 
 
 def rule_intent(message: str) -> str:
@@ -46,13 +94,20 @@ def rule_intent(message: str) -> str:
     has_business = any(
         k in text for keywords in dict(INTENT_KEYWORDS).values() for k in keywords
     )
+    has_hris = rule_hris_module(text) is not None
 
-    if has_update and not has_business:
+    if has_update and (has_business or has_hris):
+        # 同时含修改词与业务词时按长度判断：短句更像改条件
+        if len(text) <= 20:
+            return "UPDATE"
+    if has_update and not (has_business or has_hris):
         return "UPDATE"
     if any(k in text for k in PREFERENCE_KEYWORDS):
         return "PREFERENCE"
-    if has_update and len(text) <= 20:
-        return "UPDATE"
+
+    # HRIS 六大模块的关键词优先于盘点类，否则"招聘"会被误判为人才盘点
+    if has_hris:
+        return "HRIS"
 
     for intent, keywords in INTENT_KEYWORDS:
         if any(k in text for k in keywords):

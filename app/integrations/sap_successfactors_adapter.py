@@ -19,12 +19,13 @@
            SAP_SF_PASSWORD=...
     4. 在企业网络打通到 https://{tenant}.api.successfactors.com 的访问。
 
-常见 OData 端点：
-    GET    /odata/v2/User('userName')
-    POST   /odata/v2/User
-    PATCH  /odata/v2/User('userName')
-    GET    /odata/v2/EmpEmployment
-    GET    /odata/v2/Timesheet
+六模块对应的常见 OData v2 实体：
+    招聘管理        JobRequisition / JobApplication / CandidateProfile / JobOffer
+    薪酬与福利      EmpCompensation / CompensationInfo / EmployeeBenefits
+    绩效管理        PerformanceReview / Goal / CalibrationSession
+    员工关系管理    EmpEmployment / Timesheet / EmployeeTimeSheet / LeaveRequest
+    培训与开发      LearningEvents（LMS 侧通常走 OData v2 Learning API）
+    人力资源规划    Position / PositionMatrixRelationship / EmpJob（编制与任职）
 
 文档：
     https://api.sap.com/api/RCM_PF_V2/overview
@@ -42,20 +43,42 @@ import httpx
 
 from app.integrations.hris_adapter import (
     AttendanceRecordDTO,
+    CompensationDTO,
+    HeadcountDTO,
     HRISAdapter,
     HRISCapability,
     HRISEmployee,
     LeaveRequestDTO,
+    PerformanceReviewDTO,
     SyncResult,
+    TrainingRecordDTO,
 )
+
+# 六大模块 → SAP SuccessFactors OData v2 实体映射表。
+# 字段命名是各模块的常见默认集合，实际租户可能因版本与配置不同而有出入，
+# 接入沙箱时建议先用下面的 entity 名跑一次 $metadata 校验。
+SF_ENTITY_MAP: dict[str, str] = {
+    "recruitment": "JobApplication",
+    "compensation": "EmpCompensation",
+    "performance": "PerformanceReview",
+    "employee_relations": "EmpEmployment",
+    "learning": "LearningEvent",
+    "workforce": "Position",
+}
 
 
 class SAPSuccessFactorsAdapter(HRISAdapter):
     name = "sap_successfactors"
+
+    # Employee Central 主数据与时间管理是最容易开通的两块；
+    # 其余模块依赖对应 SF 模块是否已启用，故默认不全开。
     capabilities = (
-        HRISCapability.EMPLOYEE,
-        HRISCapability.ATTENDANCE,
-        HRISCapability.LEAVE,
+        HRISCapability.RECRUITMENT,
+        HRISCapability.COMPENSATION,
+        HRISCapability.PERFORMANCE,
+        HRISCapability.EMPLOYEE_RELATIONS,
+        HRISCapability.LEARNING,
+        HRISCapability.WORKFORCE,
     )
 
     def __init__(
@@ -162,36 +185,137 @@ class SAPSuccessFactorsAdapter(HRISAdapter):
             "title": employee.position_title,
             "custom01": employee.job_level,
             "hireDate": employee.hire_date.isoformat() if employee.hire_date else None,
-            "active": employee.status == "在职",
+            "status": "A" if employee.status == "在职" else "T",
         }
+        return self._post_entity("User", payload, label=employee.employee_no)
+
+    # ---------------- recruitment ----------------
+
+    def pull_applications(self, req_no: str | None = None) -> SyncResult:
+        params = dict(self._params())
+        if req_no:
+            params["$filter"] = f"requisitionId eq '{req_no}'"
         try:
-            resp = self._client.post(
-                f"{self.base_url}/odata/v2/User",
-                headers={**self._headers(), "Content-Type": "application/json"},
-                params=self._params(),
-                json=payload,
+            resp = self._client.get(
+                self._entity_url(SF_ENTITY_MAP["recruitment"]),
+                headers=self._headers(),
+                params=params,
             )
-            ok = resp.status_code in (200, 201, 204)
+            if resp.status_code != 200:
+                return SyncResult(
+                    adapter=self.name, ok=False, total=0,
+                    errors=[f"HTTP {resp.status_code}: {resp.text[:200]}"],
+                )
+            rows = resp.json().get("d", {}).get("results", [])
+            data = [
+                {
+                    "application_id": r.get("applicationId"),
+                    "req_no": r.get("requisitionId") or "",
+                    "job_title": r.get("jobTitle") or "",
+                    "candidate": r.get("candidateName") or r.get("lastName") or "",
+                    "status": r.get("applicationStatus") or "",
+                    "overall_score": r.get("overallRating") or 0,
+                }
+                for r in rows
+            ]
             return SyncResult(
-                adapter=self.name,
-                ok=ok,
-                total=1,
-                succeeded=1 if ok else 0,
-                failed=0 if ok else 1,
-                errors=[] if ok else [f"HTTP {resp.status_code}: {resp.text[:200]}"],
-                extra={"status": resp.status_code},
+                adapter=self.name, ok=True, total=len(data), succeeded=len(data),
+                extra={"applications": data},
             )
         except httpx.HTTPError as exc:
-            return SyncResult(
-                adapter=self.name,
-                ok=False,
-                total=1,
-                failed=1,
-                errors=[str(exc)],
+            return SyncResult(adapter=self.name, ok=False, total=0, errors=[str(exc)])
+
+    # ---------------- compensation ----------------
+
+    def pull_compensation(self, employee_nos: list[str] | None = None) -> SyncResult:
+        params = dict(self._params())
+        if employee_nos:
+            quoted = ",".join(f"'{n}'" for n in employee_nos)
+            params["$filter"] = f"userId in ({quoted})"
+        try:
+            resp = self._client.get(
+                self._entity_url(SF_ENTITY_MAP["compensation"]),
+                headers=self._headers(),
+                params=params,
             )
+            if resp.status_code != 200:
+                return SyncResult(
+                    adapter=self.name, ok=False, total=0,
+                    errors=[f"HTTP {resp.status_code}: {resp.text[:200]}"],
+                )
+            rows = resp.json().get("d", {}).get("results", [])
+            data = [
+                {
+                    "employee_no": r.get("userId") or "",
+                    "name": r.get("displayName") or "",
+                    "effective_date": (r.get("startDate") or "")[:10],
+                    "base_salary": r.get("payGroupAmount") or r.get("annualSalary") or 0,
+                    "target_bonus_pct": r.get("targetBonusPercent") or 0,
+                    "equity_value": r.get("stockAmount") or 0,
+                }
+                for r in rows
+            ]
+            return SyncResult(
+                adapter=self.name, ok=True, total=len(data), succeeded=len(data),
+                extra={"compensations": data},
+            )
+        except httpx.HTTPError as exc:
+            return SyncResult(adapter=self.name, ok=False, total=0, errors=[str(exc)])
+
+    def push_compensation(self, records: list[CompensationDTO]) -> SyncResult:
+        errors: list[str] = []
+        succeeded = 0
+        for r in records:
+            payload = {
+                "userId": r.employee_no,
+                "startDate": r.effective_date.isoformat(),
+                "annualSalary": r.base_salary,
+                "targetBonusPercent": r.target_bonus_pct,
+                "stockAmount": r.equity_value,
+                "currency": r.currency,
+            }
+            result = self._post_entity(
+                SF_ENTITY_MAP["compensation"], payload, label=r.employee_no
+            )
+            if result.ok:
+                succeeded += 1
+            else:
+                errors.extend(result.errors)
+        return SyncResult(
+            adapter=self.name, ok=not errors, total=len(records),
+            succeeded=succeeded, failed=len(errors), errors=errors,
+        )
+
+    # ---------------- performance ----------------
+
+    def push_performance_review(
+        self, records: list[PerformanceReviewDTO]
+    ) -> SyncResult:
+        errors: list[str] = []
+        succeeded = 0
+        for r in records:
+            payload = {
+                "userId": r.employee_no,
+                "period": r.period,
+                "managerScore": r.manager_score,
+                "selfScore": r.self_score,
+                "ratingLabel": r.rating_label,
+            }
+            result = self._post_entity(
+                SF_ENTITY_MAP["performance"], payload, label=r.employee_no
+            )
+            if result.ok:
+                succeeded += 1
+            else:
+                errors.extend(result.errors)
+        return SyncResult(
+            adapter=self.name, ok=not errors, total=len(records),
+            succeeded=succeeded, failed=len(errors), errors=errors,
+        )
+
+    # ---------------- employee_relations ----------------
 
     def push_attendance(self, records: list[AttendanceRecordDTO]) -> SyncResult:
-        # SuccessFactors 默认通过 Timesheet OData 实体提交
         errors: list[str] = []
         succeeded = 0
         for r in records:
@@ -203,26 +327,14 @@ class SAPSuccessFactorsAdapter(HRISAdapter):
                 "endTime": r.check_out or None,
                 "status": "ABSENT" if r.is_absent else ("LATE" if r.is_late else "OK"),
             }
-            try:
-                resp = self._client.post(
-                    f"{self.base_url}/odata/v2/Timesheet",
-                    headers={**self._headers(), "Content-Type": "application/json"},
-                    params=self._params(),
-                    json=payload,
-                )
-                if resp.status_code in (200, 201, 204):
-                    succeeded += 1
-                else:
-                    errors.append(f"{r.employee_no} HTTP {resp.status_code}")
-            except httpx.HTTPError as exc:
-                errors.append(f"{r.employee_no}: {exc}")
+            result = self._post_entity("Timesheet", payload, label=r.employee_no)
+            if result.ok:
+                succeeded += 1
+            else:
+                errors.extend(result.errors)
         return SyncResult(
-            adapter=self.name,
-            ok=not errors,
-            total=len(records),
-            succeeded=succeeded,
-            failed=len(errors),
-            errors=errors,
+            adapter=self.name, ok=not errors, total=len(records),
+            succeeded=succeeded, failed=len(errors), errors=errors,
         )
 
     def push_leave_request(self, leave_request: LeaveRequestDTO) -> SyncResult:
@@ -231,12 +343,82 @@ class SAPSuccessFactorsAdapter(HRISAdapter):
             "leaveType": leave_request.leave_type,
             "startDate": leave_request.start_date.isoformat(),
             "endDate": leave_request.end_date.isoformat(),
-            "days": leave_request.days,
-            "reason": leave_request.reason,
+            "deductionQuantity": leave_request.days,
+            "comments": leave_request.reason,
         }
+        return self._post_entity("LeaveRequest", payload, label=leave_request.employee_no)
+
+    # ---------------- learning ----------------
+
+    def push_training_record(self, records: list[TrainingRecordDTO]) -> SyncResult:
+        errors: list[str] = []
+        succeeded = 0
+        for r in records:
+            payload = {
+                "userId": r.employee_no,
+                "itemId": r.course_code,
+                "itemTitle": r.course_name,
+                "completionStatus": "COMPLETED" if r.completed else "IN_PROGRESS",
+                "creditHours": r.hours,
+                "score": r.score,
+            }
+            result = self._post_entity(
+                SF_ENTITY_MAP["learning"], payload, label=r.employee_no
+            )
+            if result.ok:
+                succeeded += 1
+            else:
+                errors.extend(result.errors)
+        return SyncResult(
+            adapter=self.name, ok=not errors, total=len(records),
+            succeeded=succeeded, failed=len(errors), errors=errors,
+        )
+
+    # ---------------- workforce ----------------
+
+    def pull_headcount(self, department: str | None = None) -> SyncResult:
+        params = dict(self._params())
+        if department:
+            params["$filter"] = f"department eq '{department}'"
+        try:
+            resp = self._client.get(
+                self._entity_url(SF_ENTITY_MAP["workforce"]),
+                headers=self._headers(),
+                params=params,
+            )
+            if resp.status_code != 200:
+                return SyncResult(
+                    adapter=self.name, ok=False, total=0,
+                    errors=[f"HTTP {resp.status_code}: {resp.text[:200]}"],
+                )
+            rows = resp.json().get("d", {}).get("results", [])
+            data = [
+                {
+                    "department": r.get("department") or "",
+                    "planned_headcount": int(r.get("plannedHeadcount") or 0),
+                    "actual_headcount": int(r.get("actualHeadcount") or 0),
+                    "open_reqs": int(r.get("openRequisitions") or 0),
+                }
+                for r in rows
+            ]
+            return SyncResult(
+                adapter=self.name, ok=True, total=len(data), succeeded=len(data),
+                extra={"headcounts": data},
+            )
+        except httpx.HTTPError as exc:
+            return SyncResult(adapter=self.name, ok=False, total=0, errors=[str(exc)])
+
+    # ---------------- 内部辅助 ----------------
+
+    def _entity_url(self, entity: str) -> str:
+        return f"{self.base_url}/odata/v2/{entity}"
+
+    def _post_entity(
+        self, entity: str, payload: dict, label: str = ""
+    ) -> SyncResult:
         try:
             resp = self._client.post(
-                f"{self.base_url}/odata/v2/LeaveRequest",
+                self._entity_url(entity),
                 headers={**self._headers(), "Content-Type": "application/json"},
                 params=self._params(),
                 json=payload,
@@ -248,15 +430,15 @@ class SAPSuccessFactorsAdapter(HRISAdapter):
                 total=1,
                 succeeded=1 if ok else 0,
                 failed=0 if ok else 1,
-                errors=[] if ok else [f"HTTP {resp.status_code}: {resp.text[:200]}"],
+                errors=[]
+                if ok
+                else [f"{label} HTTP {resp.status_code}: {resp.text[:200]}"],
+                extra={"status": resp.status_code, "entity": entity},
             )
         except httpx.HTTPError as exc:
             return SyncResult(
-                adapter=self.name,
-                ok=False,
-                total=1,
-                failed=1,
-                errors=[str(exc)],
+                adapter=self.name, ok=False, total=1, failed=1,
+                errors=[f"{label}: {exc}"],
             )
 
 

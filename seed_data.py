@@ -18,23 +18,38 @@ from sqlalchemy import delete, select
 from app.config.database import SessionLocal, init_db
 from app.models import (
     Application,
+    AttritionRisk,
     AttendanceRecord,
+    BenefitPlan,
+    CalibrationSession,
     Candidate,
     CandidateSkill,
     Competency,
     Course,
     DepartmentMetric,
     Employee,
+    EmployeeBenefit,
+    EmployeeCompensation,
     EmployeeCompetency,
+    EngagementSurvey,
+    HeadcountPlan,
     IDP,
+    ImprovementPlan,
     InterviewSchedule,
     JobPost,
     KeyPosition,
     LeaveRequest,
     OfferRecord,
+    PerformanceGoal,
     PerformanceRecord,
+    PerformanceReview,
     PotentialAssessment,
+    RelationCase,
+    SalaryBand,
     SuccessionPlan,
+    TrainingCourse,
+    TrainingEnrollment,
+    WorkforceForecast,
 )
 from datetime import time as dtime, timedelta
 
@@ -147,14 +162,36 @@ def _hire_date() -> date:
 
 def clear_all(db):
     for table in (
+        # 人力资源规划
+        AttritionRisk,
+        WorkforceForecast,
+        HeadcountPlan,
+        # 培训与开发
+        TrainingEnrollment,
+        TrainingCourse,
+        # 员工关系管理
+        EngagementSurvey,
+        RelationCase,
+        AttendanceRecord,
+        LeaveRequest,
+        # 绩效管理
+        ImprovementPlan,
+        CalibrationSession,
+        PerformanceReview,
+        PerformanceGoal,
+        # 薪酬与福利
+        EmployeeBenefit,
+        BenefitPlan,
+        EmployeeCompensation,
+        SalaryBand,
+        # 招聘管理
         OfferRecord,
         InterviewSchedule,
         Application,
         CandidateSkill,
         Candidate,
         JobPost,
-        AttendanceRecord,
-        LeaveRequest,
+        # 人才管理与组织发展
         IDP,
         SuccessionPlan,
         KeyPosition,
@@ -588,12 +625,462 @@ def seed(db):
                 )
             )
 
+    # ================= HRIS · 薪酬与福利 =================
+
+    # 职级 × 城市薪酬带宽
+    LEVEL_MEDIAN = {
+        "P4": 220000, "P5": 300000, "P6": 400000, "P7": 550000,
+        "P8": 750000, "M1": 600000, "M2": 850000, "M3": 1200000,
+    }
+    cities = ["上海", "北京", "深圳", "杭州"]
+    for level, median in LEVEL_MEDIAN.items():
+        for city in cities:
+            # 一线城市系数差异：上海北京 1.0，深圳 0.95，杭州 0.9
+            factor = {"上海": 1.0, "北京": 1.0, "深圳": 0.95, "杭州": 0.90}[city]
+            m = int(median * factor)
+            db.add(
+                SalaryBand(
+                    job_level=level,
+                    city=city,
+                    median=m,
+                    minimum=int(m * 0.75),
+                    maximum=int(m * 1.30),
+                    effective_date=date(2025, 1, 1),
+                )
+            )
+    db.flush()
+
+    # 员工薪酬包：围绕带宽中位波动，刻意让一部分人低于下限
+    for emp in employees:
+        median = LEVEL_MEDIAN.get(emp.job_level, 300000)
+        # 20% 的人低于带宽下限，15% 高于上限，其余落在健康区间
+        r = random.random()
+        if r < 0.20:
+            base = int(median * random.uniform(0.62, 0.74))
+        elif r < 0.35:
+            base = int(median * random.uniform(1.12, 1.25))
+        else:
+            base = int(median * random.uniform(0.88, 1.08))
+        exp_years = max(0, (date.today() - emp.hire_date).days // 365)
+        bonus_pct = 10.0 if emp.job_level.startswith("P") else 20.0
+        if emp.job_level in ("P7", "P8", "M2", "M3"):
+            bonus_pct += 10.0
+        equity = (
+            int(base * random.uniform(0.10, 0.25))
+            if emp.job_level in ("P7", "P8", "M1", "M2", "M3")
+            else 0
+        )
+        db.add(
+            EmployeeCompensation(
+                employee_id=emp.id,
+                employee_no=emp.employee_no,
+                effective_date=date(2025, 1, 1),
+                base_salary=base,
+                target_bonus_pct=bonus_pct,
+                equity_value=equity,
+                pay_grade=emp.job_level,
+                last_adjust_pct=round(random.uniform(-2.0, 12.0), 1),
+                last_adjust_date=date(2025, 1, 1),
+            )
+        )
+    db.flush()
+
+    BENEFIT_PLANS = [
+        ("补充医疗保险", "insurance", 3600, True),
+        ("年度健康体检", "health", 1200, True),
+        ("企业年金", "insurance", 8400, False),
+        ("通讯补贴", "allowance", 2400, True),
+        ("带薪病假额度", "leave", 0, True),
+        ("股权激励计划", "equity", 0, False),
+        ("员工心理关怀 EAP", "health", 600, False),
+    ]
+    plans = []
+    for name, category, cost, is_core in BENEFIT_PLANS:
+        p = BenefitPlan(
+            name=name,
+            category=category,
+            annual_cost=cost,
+            is_core=is_core,
+            description=f"{name}（{category}）",
+        )
+        db.add(p)
+        plans.append(p)
+    db.flush()
+
+    for emp in employees:
+        for p in plans:
+            if p.is_core:
+                # 核心福利覆盖率保持在 90%~100% 之间，留出少量缺口演示排查
+                enrolled = random.random() < 0.94
+            else:
+                enrolled = random.random() < 0.45
+            if enrolled:
+                db.add(
+                    EmployeeBenefit(
+                        employee_id=emp.id,
+                        plan_id=p.id,
+                        enrolled_at=date(2025, 1, 1),
+                        employee_contribution=0,
+                        status="active",
+                    )
+                )
+    db.flush()
+
+    # ================= HRIS · 绩效管理 =================
+
+    GOAL_TEMPLATES = [
+        "完成核心模块重构并上线",
+        "季度营收目标达成",
+        "客户满意度提升至 90%",
+        "主导一次跨部门协作项目",
+        "带领团队完成人才梯队搭建",
+        "关键系统可用性提升至 99.9%",
+    ]
+    for emp in employees[:40]:
+        for i in range(random.randint(1, 3)):
+            target = float(random.choice([100, 100, 100, 80, 120, 50]))
+            actual = round(target * random.uniform(0.35, 1.15), 1)
+            status = (
+                "completed" if actual >= target
+                else "at_risk" if actual >= target * 0.6
+                else "missed"
+            )
+            db.add(
+                PerformanceGoal(
+                    employee_id=emp.id,
+                    period="2025H1",
+                    title=f"{random.choice(GOAL_TEMPLATES)}",
+                    goal_type=random.choice(["OKR", "KPI"]),
+                    weight=round(1.0 / random.randint(1, 3), 2) or 0.5,
+                    target_value=target,
+                    actual_value=actual,
+                    due_date=date(2025, 6, 30),
+                    status=status,
+                )
+            )
+    db.flush()
+
+    latest = db.execute(
+        select(PerformanceRecord).where(PerformanceRecord.period == "2025H1")
+    ).scalars().all()
+    perf_by_emp = {p.employee_id: p for p in latest}
+    for emp in employees:
+        p = perf_by_emp.get(emp.id)
+        base_score = p.score if p else random.uniform(2.5, 4.5)
+        self_score = round(min(5.0, max(1.0, base_score + random.uniform(-0.3, 1.2))), 1)
+        mgr_score = round(min(5.0, max(1.0, base_score + random.uniform(-0.6, 0.4))), 1)
+        calibrated = round((mgr_score + self_score) / 2, 1) if random.random() < 0.5 else mgr_score
+        label = "S" if calibrated >= 4.5 else "A" if calibrated >= 4.0 else (
+            "B" if calibrated >= 3.2 else "C" if calibrated >= 2.5 else "D"
+        )
+        db.add(
+            PerformanceReview(
+                employee_id=emp.id,
+                period="2025H1",
+                self_score=self_score,
+                manager_score=mgr_score,
+                calibrated_score=calibrated,
+                rating_label=label,
+                review_date=date(2025, 7, 10),
+                comment="",
+            )
+        )
+    db.flush()
+
+    for dep in DEPARTMENTS:
+        db.add(
+            CalibrationSession(
+                department=dep,
+                period="2025H1",
+                held_at=date(2025, 7, 15),
+                participant_count=DEPARTMENTS[dep]["headcount"],
+                before_distribution="{}",
+                after_distribution="{}",
+                adjusted_count=random.randint(0, 3),
+                note="部门级绩效校准会",
+            )
+        )
+
+    # 低绩效员工进入 PIP
+    low_performers = [e for e in employees if (perf_by_emp.get(e.id).score if perf_by_emp.get(e.id) else 5) < 2.8]
+    for emp in low_performers[:4]:
+        db.add(
+            ImprovementPlan(
+                employee_id=emp.id,
+                period="2025H1",
+                start_date=date(2025, 7, 20),
+                end_date=date(2025, 10, 20),
+                reason="连续两个周期绩效未达标",
+                target_score=3.0,
+                outcome=random.choice(["ongoing", "ongoing", "passed", "failed"]),
+            )
+        )
+    db.flush()
+
+    # ================= HRIS · 培训与开发 =================
+
+    COURSE_DEFS = [
+        ("TR001", "新员工入职合规培训", "compliance", "online", 4.0, 200, True, None),
+        ("TR002", "数据安全与隐私保护", "compliance", "online", 3.0, 150, True, None),
+        ("TR003", "管理者角色认知", "leadership", "classroom", 12.0, 3000, False, None),
+        ("TR004", "高潜人才领导力加速营", "leadership", "workshop", 24.0, 8000, False, None),
+        ("TR005", "结构化思维与问题解决", "general", "online", 6.0, 800, False, None),
+        ("TR006", "高效沟通与跨部门协作", "general", "classroom", 8.0, 2500, False, None),
+        ("TR007", "系统架构设计实战", "professional", "workshop", 16.0, 6000, False, None),
+        ("TR008", "数据分析与业务洞察", "professional", "online", 10.0, 1800, False, None),
+        ("TR009", "销售谈判技巧进阶", "professional", "classroom", 12.0, 4000, False, None),
+        ("TR010", "项目管理实战", "general", "online", 14.0, 2200, False, None),
+    ]
+    comp_list = list(competencies.values())
+    courses = []
+    for code, name, cat, mode, hours, cost, mandatory, _ in COURSE_DEFS:
+        c = TrainingCourse(
+            code=code,
+            name=name,
+            category=cat,
+            delivery_mode=mode,
+            duration_hours=hours,
+            cost_per_head=cost,
+            target_competency_id=random.choice(comp_list).id if comp_list else None,
+            target_level=random.randint(3, 5),
+            provider="内训" if mandatory else random.choice(["内训", "外部机构"]),
+            is_mandatory=mandatory,
+            description=name,
+        )
+        db.add(c)
+        courses.append(c)
+    db.flush()
+
+    mandatory_courses = [c for c in courses if c.is_mandatory]
+    for emp in employees:
+        # 必修：故意让约 12% 的人没完成，演示合规排查
+        for c in mandatory_courses:
+            if random.random() < 0.88:
+                db.add(
+                    TrainingEnrollment(
+                        employee_id=emp.id,
+                        course_id=c.id,
+                        enrolled_at=date(2025, 2, 1),
+                        completed_at=date(2025, 3, 1),
+                        status="completed",
+                        score=round(random.uniform(75, 98), 1),
+                        hours_spent=c.duration_hours,
+                        feedback_score=round(random.uniform(3.4, 4.8), 1),
+                    )
+                )
+        # 选修
+        for c in random.sample([x for x in courses if not x.is_mandatory], k=random.randint(0, 3)):
+            done = random.random() < 0.7
+            db.add(
+                TrainingEnrollment(
+                    employee_id=emp.id,
+                    course_id=c.id,
+                    enrolled_at=date(2025, 3, 1),
+                    completed_at=date(2025, 5, 1) if done else None,
+                    status="completed" if done else random.choice(["enrolled", "dropped"]),
+                    score=round(random.uniform(60, 95), 1) if done else 0.0,
+                    hours_spent=c.duration_hours if done else round(c.duration_hours * 0.3, 1),
+                    feedback_score=round(random.uniform(3.0, 5.0), 1) if done else 0.0,
+                )
+            )
+    db.flush()
+
+    # ================= HRIS · 人力资源规划 =================
+
+    for dep, cfg in DEPARTMENTS.items():
+        planned = cfg["headcount"] + random.randint(0, 4)
+        actual = cfg["headcount"]
+        db.add(
+            HeadcountPlan(
+                department=dep,
+                period="2025H1",
+                planned_headcount=planned,
+                actual_headcount=actual,
+                open_reqs=random.randint(0, 3),
+                budget_amount=planned * 450000,
+                actual_cost=actual * random.randint(380000, 470000),
+                approved_at=date(2025, 1, 5),
+                note="2025 上半年编制计划",
+            )
+        )
+
+    for dep, cfg in DEPARTMENTS.items():
+        for level in cfg["levels"]:
+            supply = random.randint(1, 8)
+            attrition = round(random.uniform(0.3, 2.5), 1)
+            growth = round(random.uniform(0.2, 3.0), 1)
+            internal = random.randint(0, supply)
+            db.add(
+                WorkforceForecast(
+                    department=dep,
+                    job_level=level,
+                    period="2025H2",
+                    current_supply=supply,
+                    natural_attrition=attrition,
+                    demand_growth=growth,
+                    internal_supply=internal,
+                    external_hire_need=max(0, int(attrition + growth - internal)),
+                    scenario="baseline",
+                )
+            )
+
+    # 离职风险：六因子加权。
+    # 按人群分档构造因子，让风险分呈真实分布（约 15% 高风险、35% 中风险、50% 低风险），
+    # 否则全部落在中间档，演示不出分级效果。
+    for idx, emp in enumerate(employees):
+        tenure_years = (date.today() - emp.hire_date).days / 365.25
+        p = perf_by_emp.get(emp.id)
+        comp = db.execute(
+            select(EmployeeCompensation).where(
+                EmployeeCompensation.employee_id == emp.id
+            )
+        ).scalars().first()
+        median = LEVEL_MEDIAN.get(emp.job_level, 300000)
+        ratio = (comp.base_salary / median) if comp and median else 1.0
+
+        # 以固定间隔分档，保证三档人群都有代表
+        bucket = idx % 20
+        if bucket < 3:  # 15% 高风险
+            level_hint = "high"
+        elif bucket < 10:  # 35% 中风险
+            level_hint = "medium"
+        else:  # 50% 低风险
+            level_hint = "low"
+
+        def _factor(low: float, high: float) -> float:
+            return round(random.uniform(low, high), 2)
+
+        if level_hint == "high":
+            f_tenure = _factor(0.55, 0.95)
+            f_perf = _factor(0.45, 0.95)
+            # 薪酬竞争力以相对带宽的实际位置为主，再叠加档位保底，
+            # 否则全员 compa-ratio 偏高时会把该因子压成 0，失去区分度
+            f_comp = round(min(1.0, max(0.55, 1.0 - ratio + _factor(0.10, 0.30))), 2)
+            f_promo = _factor(0.60, 0.95)
+            f_eng = _factor(0.55, 0.90)
+            f_market = _factor(0.60, 0.95)
+        elif level_hint == "medium":
+            f_tenure = _factor(0.25, 0.60)
+            f_perf = _factor(0.25, 0.60)
+            f_comp = round(min(1.0, max(0.25, 1.0 - ratio + _factor(-0.05, 0.20))), 2)
+            f_promo = _factor(0.30, 0.65)
+            f_eng = _factor(0.25, 0.60)
+            f_market = _factor(0.25, 0.65)
+        else:
+            f_tenure = _factor(0.05, 0.35)
+            f_perf = _factor(0.05, 0.35)
+            f_comp = round(min(1.0, max(0.05, 1.0 - ratio + _factor(-0.10, 0.10))), 2)
+            f_promo = _factor(0.05, 0.35)
+            f_eng = _factor(0.05, 0.35)
+            f_market = _factor(0.05, 0.40)
+        score = round(
+            (f_tenure * 0.15 + f_perf * 0.15 + f_comp * 0.20
+             + f_promo * 0.20 + f_eng * 0.15 + f_market * 0.15) * 100,
+            1,
+        )
+        level = "high" if score >= 70 else "medium" if score >= 45 else "low"
+        top = max(
+            [("factor_tenure", f_tenure), ("factor_performance", f_perf),
+             ("factor_compensation", f_comp), ("factor_promotion", f_promo),
+             ("factor_engagement", f_eng), ("factor_market", f_market)],
+            key=lambda x: x[1],
+        )[0]
+        reasons = {
+            "factor_tenure": "入职时间较短，组织认同尚未建立",
+            "factor_performance": "绩效表现好但缺少相应认可",
+            "factor_compensation": "薪酬低于市场对标水平",
+            "factor_promotion": "同一职级停留时间过长",
+            "factor_engagement": "敬业度调查得分偏低",
+            "factor_market": "所在职能外部机会活跃",
+        }
+        db.add(
+            AttritionRisk(
+                employee_id=emp.id,
+                period="2025H1",
+                risk_score=score,
+                risk_level=level,
+                factor_tenure=f_tenure,
+                factor_performance=f_perf,
+                factor_compensation=f_comp,
+                factor_promotion=f_promo,
+                factor_engagement=f_eng,
+                factor_market=f_market,
+                key_reason=reasons[top],
+                retention_action="",
+            )
+        )
+
+    # ================= HRIS · 员工关系管理（扩展） =================
+
+    CASE_TYPES = ["dispute", "grievance", "care", "compliance"]
+    for emp in random.sample(employees, k=min(14, len(employees))):
+        opened = date.today() - timedelta(days=random.randint(1, 90))
+        closed = opened + timedelta(days=random.randint(3, 40)) if random.random() < 0.6 else None
+        db.add(
+            RelationCase(
+                employee_id=emp.id,
+                case_type=random.choice(CASE_TYPES),
+                severity=random.choice(["low", "medium", "high"]),
+                opened_at=opened,
+                closed_at=closed,
+                owner="HRBP",
+                description="员工关系事件记录",
+                status="closed" if closed else "open",
+                escalation_risk=round(random.uniform(0.1, 0.95), 2),
+            )
+        )
+
+    for emp in employees:
+        overall = round(random.uniform(2.4, 4.8), 1)
+        db.add(
+            EngagementSurvey(
+                employee_id=emp.id,
+                period="2025H1",
+                overall_score=overall,
+                score_work=round(random.uniform(2.8, 4.8), 1),
+                score_manager=round(random.uniform(2.5, 4.7), 1),
+                score_growth=round(random.uniform(2.2, 4.6), 1),
+                score_reward=round(random.uniform(2.0, 4.5), 1),
+                score_balance=round(random.uniform(2.4, 4.8), 1),
+                is_promoter=overall >= 4.0 and random.random() < 0.8,
+                comment="",
+            )
+        )
+
     db.commit()
     return {
         "employees": len(employees),
         "competencies": len(competencies),
         "key_positions": len(positions),
         "periods": PERIODS,
+        "hris": {
+            "recruitment": {
+                "job_posts": len(jobs),
+                "candidates": len(candidates),
+                "applications": len(applications),
+            },
+            "compensation": {
+                "salary_bands": len(LEVEL_MEDIAN) * len(cities),
+                "compensation_records": len(employees),
+                "benefit_plans": len(plans),
+            },
+            "performance": {
+                "goals": len(db.execute(select(PerformanceGoal)).scalars().all()),
+                "reviews": len(employees),
+            },
+            "employee_relations": {
+                "relation_cases": 14,
+                "engagement_surveys": len(employees),
+            },
+            "learning": {
+                "courses": len(courses),
+                "enrollments": len(db.execute(select(TrainingEnrollment)).scalars().all()),
+            },
+            "workforce": {
+                "headcount_plans": len(DEPARTMENTS),
+                "attrition_records": len(employees),
+            },
+        },
     }
 
 

@@ -1,8 +1,19 @@
-# Smart Talent Agent · 智能组织发展与人才盘点
+# Smart Talent Agent · 智能人才发展与 HRIS Agent
 
 面向 HR 业务的多 Agent 智能体系统：大模型只承担语言层的理解与表达，
-所有人才盘点、继任分析、组织诊断、智能定薪、请假考勤与招聘筛选的打分逻辑，
+所有人才盘点、继任分析、组织诊断，以及 HRIS 六大模块的打分逻辑，
 都在 Python 与数据库里完成。
+
+## HRIS 六大模块
+
+| 模块 | 关键能力 | 算法核心 |
+| --- | --- | --- |
+| **招聘管理** | 简历筛选、Offer 定薪、面试安排、招聘漏斗 | 技能 40 + 经验 20 + 学历 15 + 薪资 15 + 职级 10；定薪按分数档 + 经验奖金比 + RSU |
+| **薪酬与福利** | 薪酬公平性、调薪预算、福利覆盖、薪酬单 | compa-ratio、带宽渗透率、红绿圈判定、TCC / TDC |
+| **绩效管理** | 目标达成、评价偏差、强制分布、改进计划 | 加权达成率、自评-主管评偏差、S/A/B/C/D 分布校验 |
+| **员工关系管理** | 假期、考勤、关系事件、敬业度 | 法定年假按工龄分档、SLA 超期、五维敬业度与 eNPS |
+| **培训与开发** | 培训总览、必修合规、课程推荐、培训效果 | 能力差距排序、必修人次合规率、按满意度排课 |
+| **人力资源规划** | 编制审查、供需预测、离职风险、继任联动 | 编制达成率、内外部供给缺口、六因子加权风险分 |
 
 ## 为什么这样设计
 
@@ -12,24 +23,38 @@ LLM 在数字与推理上容易失真，直接让模型"算九宫格"、"算 com
 
 | 角色 | 职责 |
 | --- | --- |
-| **大模型** | 意图识别、结构化条件抽取、自然语言汇报 |
-| **Python 服务** | 九宫格定位、继任覆盖、梯队供给、组织健康分、ATS 打分、智能定薪、HRIS 业务规则 |
-| **数据库** | 员工、绩效、潜力、能力、招聘、请假、考勤等真实数据来源 |
-| **HRIS Adapter** | 隔离本地与外部系统（SAP SuccessFactors 等），可热插拔 |
+| **大模型** | 意图识别、HRIS 模块路由、结构化条件抽取、自然语言汇报 |
+| **Python 服务** | 九宫格定位、继任覆盖、梯队供给、组织健康分，以及 HRIS 六大模块的打分与统计 |
+| **数据库** | 员工、绩效、潜力、能力、招聘、薪酬、培训、编制等真实数据来源 |
+| **HRIS Adapter** | 按六大模块隔离本地与外部系统（SAP SuccessFactors 等），可热插拔 |
 
 这套范式把"语言"与"计算"在工程上分离，模型可以被替换，
 业务规则仍然独立演化、可以独立测试。
 
 ## 核心能力
 
+**人才管理与组织发展**
+
 - 人才盘点九宫格：绩效 × 潜力定位 + 9 类管理动作
 - 关键岗位继任地图：覆盖率、立即就绪率、候选深度与风险识别
 - 人才梯队分析：P/M 双通道供给比与断层诊断
 - 个人发展计划 IDP：能力差距 × 课程形式的 70-20-10 配比
 - 组织诊断：扣分制健康分 + 11 类触发问题清单
-- ATS 招聘：五维加权打分 + 三段式 Offer + 面试推荐 + 漏斗
-- HRIS 员工事务：年假/请假/考勤，按劳动法基线
-- HRIS 集成：本地 Adapter + SAP SuccessFactors OData v2 接入骨架
+
+**HRIS 六大模块**
+
+- 招聘管理：五维加权打分 + 三段式 Offer + 面试推荐 + 漏斗
+- 薪酬与福利：compa-ratio 公平性、调薪预算模拟、福利覆盖、薪酬单
+- 绩效管理：目标达成、评价偏差、强制分布校验、PIP 跟进
+- 员工关系管理：法定年假、考勤、关系事件 SLA、敬业度与 eNPS
+- 培训与开发：培训总览、必修合规、能力差距驱动课程推荐、效果评估
+- 人力资源规划：编制达成、供需预测、六因子离职风险、继任联动
+
+**系统集成**
+
+- 抽象 `HRISAdapter`：按六大模块声明能力，业务侧零修改切换
+- `LocalHRISAdapter`：直接读写本地 SQLite / MySQL（默认）
+- `SAPSuccessFactorsAdapter`：Employee Central OData v2 接入骨架
 
 ## 技术栈
 
@@ -95,28 +120,56 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 基于部门级指标（离职率、平均绩效、高潜占比、管理幅度、平均司龄）计算健康分，
 输出问题清单与改进建议。
 
-### 6. ATS 招聘管理
+### 6. HRIS · 招聘管理
 
-- 简历筛选：技能/经验/学历/期望薪资/当前职级加权打分，自动分档
-- 智能定薪：按匹配分与经验年限给出 base + 奖金 + 长期激励建议
+- 简历筛选：技能 / 经验 / 学历 / 期望薪资 / 职级五维加权打分，自动分档
+- Offer 定薪：按匹配分与经验年限给出 base + 奖金 + 长期激励三段式建议
 - 面试安排：推荐面试官与未来一周可预约时段
 - 招聘漏斗：各阶段候选人数量与转化率统计
 - 录用转换：通过的候选人落库为正式员工
 
-### 7. HRIS 员工事务
+### 7. HRIS · 薪酬与福利
 
-- 年假余额：按中国劳动法计算法定年假、已用、剩余
-- 请假申请：提交年假/病假/事假/调休/产假
-- 请假审批：批准或驳回
-- 考勤汇总：出勤率、迟到次数、缺勤天数、平均工时
+- 薪酬公平性：compa-ratio 分布、带宽渗透率、红圈（超薪）/ 绿圈（欠薪）判定
+- 调薪预算：按调薪池比例模拟，优先补齐低于带宽下限的人
+- 福利覆盖：核心福利参保率、人均年成本、未覆盖排查
+- 薪酬单：TCC 总现金薪酬、TDC 总直接薪酬、带宽位置
 
-### 8. HRIS 系统集成
+### 8. HRIS · 绩效管理
 
-- 抽象 `HRISAdapter` 接口：员工、考勤、请假标准化操作
+- 目标达成：OKR / KPI 加权达成率、风险目标识别
+- 评价偏差：自评与主管评的差值分析，识别认知落差
+- 强制分布：S / A / B / C / D 校准前后分布校验与调整建议
+- 改进计划：PIP 跟进与未达标人员清单
+
+### 9. HRIS · 员工关系管理
+
+- 假期：按中国劳动法工龄计算法定年假、已用与剩余
+- 考勤：出勤率、迟到、缺勤、累计工时
+- 关系事件：纠纷 / 申诉 / 关怀 / 合规台账，SLA 超期与升级风险预警
+- 敬业度：五维得分、eNPS 推荐者占比、低分预警
+
+### 10. HRIS · 培训与开发
+
+- 培训总览：覆盖率、完课率、学时、人均成本
+- 必修合规：必修课应完成 / 实际完成人次、缺口人员清单
+- 课程推荐：按能力差距（要求等级 − 现状等级）匹配课程与优先级
+- 培训效果：按课程的通过率、满意度与投入产出
+
+### 11. HRIS · 人力资源规划
+
+- 编制审查：编制达成率、在招缺口、预算执行率
+- 供需预测：自然流失 + 业务增量，测算内部供给与外部招聘需求
+- 离职风险：六因子加权风险分、分级与保留建议
+- 继任联动：高风险在岗 × 无继任覆盖的交叉风险
+
+### 12. HRIS 系统集成
+
+- 抽象 `HRISAdapter`：按六大模块声明能力，业务侧零修改切换
 - `LocalHRISAdapter`：直接读写本地 SQLite / MySQL（默认）
-- `SAPSuccessFactorsAdapter`：SAP SuccessFactors Employee Central OData v2 接入骨架
+- `SAPSuccessFactorsAdapter`：Employee Central OData v2 接入骨架
 
-### 9. 用户意图识别
+### 13. 用户意图识别
 
 | 意图 | 说明 |
 | --- | --- |
@@ -124,11 +177,21 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 | SUCCESSION | 继任地图、接班人、人才梯队 |
 | IDP | 个人发展计划、培养方案 |
 | DIAGNOSIS | 组织诊断、组织健康度 |
-| ATS | 招聘管理（简历筛选、智能定薪、面试安排、漏斗） |
-| HR_TRANSACTION | 员工事务（请假、考勤） |
+| HRIS | HRIS 六大模块（招聘 / 薪酬福利 / 绩效 / 员工关系 / 培训 / 人力规划） |
 | UPDATE | 修改部门、周期、职级、员工 |
 | PREFERENCE | 设置筛选偏好（只看某类人才、排除某些情况） |
 | CHAT | 普通对话 |
+
+命中 `HRIS` 后会进入二级路由 `decide_hris_module`，再分发到六个具体业务节点：
+
+| hris_module | 业务节点 | 典型问法 |
+| --- | --- | --- |
+| `recruitment` | 招聘管理 | 简历筛选、定 Offer、面试安排、招聘漏斗 |
+| `compensation` | 薪酬与福利 | 薪酬公平性、调薪预算、福利覆盖、薪酬单 |
+| `performance` | 绩效管理 | 目标达成、评价偏差、强制分布、改进计划 |
+| `employee_relations` | 员工关系管理 | 年假、考勤、关系事件、敬业度 |
+| `learning` | 培训与开发 | 培训总览、必修合规、课程推荐、培训效果 |
+| `workforce` | 人力资源规划 | 编制达成、供需预测、离职风险、继任联动 |
 
 ### 7. 多轮对话 Memory
 
@@ -143,10 +206,10 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 支持"只看明星人才""只看高潜""排除未就绪候选人"，也支持"不限""取消筛选"清空偏好。
 
-### 10. ATS / HRIS 上下文复用
+### 10. HRIS 模块间上下文复用
 
-切换到「请这次人才盘点」后再询问「帮韩磊查一下年假余额」，
-对话主题会从 ATS 切换到 HR_TRANSACTION，但公司、部门等上下文继续生效。
+在招聘域里带上部门条件后，再问"这个部门的编制达成情况"，
+部门上下文会继续生效，模块从 `recruitment` 切到 `workforce`。
 
 ### 11. 数据真实性控制
 
@@ -176,27 +239,38 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
                      ▼
           Python 业务计算 Tool
                      │
-        ┌────────────┼────────────┐
-        ▼            ▼            ▼
-    九宫格计算    继任/梯队      IDP
-        │            │            │
-        ▼            ▼            ▼
-      组织诊断 ←─────┴─────→  SQLAlchemy
-                     │
-                     ▼
-            MySQL / SQLite
-                     │
-                     ▼
-        员工 / 绩效 / 潜力 / 继任数据
-                     │
-                     ▼
-                计算结果
-                     │
-                     ▼
-          大模型自然语言汇报
-                     │
-                     ▼
-                    用户
+        ┌────────────┴────────────────────────┐
+        │                                     │
+        ▼                                     ▼
+   人才管理与组织发展                    HRIS 六大模块
+   ┌──────────┬──────────┐        ┌────────┬────────┬────────┐
+   ▼          ▼          ▼        ▼        ▼        ▼        ▼
+ 九宫格    继任/梯队    IDP     招聘    薪酬福利   绩效   员工关系
+   │          │          │        │        │        │        │
+   └──────────┴─────┬────┘        └────────┴────────┴───┬────┘
+                    │                                  │
+                    ▼                    ┌─────────────┴────────┐
+                组织诊断                ▼                      ▼
+                    │               培训与开发            人力规划
+                    │                    │                      │
+                    └────────────┬───────┴──────────────────────┘
+                                 ▼
+                          SQLAlchemy
+                                 │
+                                 ▼
+                        MySQL / SQLite
+                                 │
+                                 ▼
+            员工 / 绩效 / 潜力 / 招聘 / 薪酬 / 培训 / 编制
+                                 │
+                                 ▼
+                            计算结果
+                                 │
+                                 ▼
+                      大模型自然语言汇报
+                                 │
+                                 ▼
+                                用户
 ```
 
 * * *
@@ -214,11 +288,22 @@ analyze_request（意图识别）
    ↓
 extract_info（抽取部门 / 周期 / 职级 / 员工）
    ↓
+   ├── 人才管理类 → talent_review / succession / idp / diagnosis
+   │
+   └── HRIS 类 → decide_hris_module（二级路由）
+                    ├─ recruitment        招聘管理
+                    ├─ compensation      薪酬与福利
+                    ├─ performance       绩效管理
+                    ├─ employee_relations 员工关系管理
+                    ├─ learning          培训与开发
+                    └─ workforce         人力资源规划
+   ↓
 调用对应业务 Tool
    ↓
 查询数据库
    ↓
-九宫格定位 / 继任覆盖 / 梯队供给比 / 能力差距 / 健康分
+九宫格定位 / 继任覆盖 / 梯队供给比 / compa-ratio /
+目标达成率 / 离职风险分 / 编制达成率 / 合规率
    ↓
 生成结构化结果
    ↓
@@ -236,6 +321,7 @@ extract_info（抽取部门 / 周期 / 职级 / 员工）
 - `user_message`
 - `request_type`
 - `active_topic`
+- `hris_module` —— HRIS 二级路由结果（recruitment / compensation / performance / employee_relations / learning / workforce）
 - `department`
 - `period`
 - `job_level`
@@ -290,10 +376,20 @@ extract_info（抽取部门 / 周期 / 职级 / 员工）
        ┌─────────────────┴─────────────────┤
        │                                   │
        ▼                                   ▼
-  talent_review / succession / idp / diagnosis
-                         │
-                         ▼
-                  generate_answer
+ talent_review / succession / idp       decide_hris_module
+ / diagnosis / diagnose                     （二级路由）
+       │                                   │
+       │            ┌──────────┬───────────┼──────────┬──────────┐
+       │            ▼          ▼           ▼          ▼          ▼
+       │      recruitment compensation performance  learning  workforce
+       │            │          │           │          │          │
+       │            │          │           ▼          │          │
+       │            │          │     employee_relations          │
+       │            │          │           │          │          │
+       └────────────┴──────────┴───────────┴──────────┴──────────┘
+                                │
+                                ▼
+                         generate_answer
 ```
 
 主要处理逻辑：
@@ -302,11 +398,13 @@ extract_info（抽取部门 / 周期 / 职级 / 员工）
 - `SUCCESSION`：继任地图或人才梯队
 - `IDP`：个人发展计划
 - `DIAGNOSIS`：组织诊断
-- `ATS`：招聘管理
-- `HR_TRANSACTION`：员工事务
+- `HRIS`：进入 `decide_hris_module` 二级路由，分发到六个业务节点
 - `UPDATE`：更新盘点条件后**沿用上一主题重新计算**
 - `PREFERENCE`：更新筛选偏好后**沿用上一主题重新计算**
 - `CHAT`：普通对话
+
+二级路由优先由大模型判断，模型不可用时回退到关键词规则表
+（`rules.HRIS_MODULE_KEYWORDS`）。
 
 * * *
 
@@ -495,26 +593,73 @@ Agent 自动回退到**规则引擎**：
 
 ## 十三、数据库设计
 
+**人才管理与组织发展**
+
 | 表 | 说明 |
 | --- | --- |
 | `employee` | 员工主数据 |
 | `performance_record` | 绩效考核记录（1-5 分） |
 | `potential_assessment` | 潜力评估记录 |
 | `competency` | 能力模型项 |
-| `employee_competency` | 员工能力现状与目标等级 |
+| `employee_competency` | 员工能力现状与岗位要求等级 |
 | `key_position` | 关键岗位 |
 | `succession_plan` | 继任计划（含准备度） |
 | `course` | 学习资源（项目 / 导师 / 线上 / 线下） |
 | `idp` | 个人发展计划 |
 | `department_metric` | 部门级组织诊断指标 |
-| `job_post` | 招聘需求 / JD |
+
+**HRIS · 招聘管理**
+
+| 表 | 说明 |
+| --- | --- |
+| `job_post` | 招聘需求 / JD（含需求编号 req_no） |
 | `candidate` | 候选人主数据 |
 | `candidate_skill` | 候选人技能明细 |
 | `application` | 申请（招聘漏斗的一个环节） |
 | `interview_schedule` | 面试安排 |
 | `offer_record` | Offer 记录（base / 奖金 / 股权 / 总包 / compa-ratio） |
+
+**HRIS · 薪酬与福利**
+
+| 表 | 说明 |
+| --- | --- |
+| `salary_band` | 职级 × 城市薪酬带宽（min / median / max） |
+| `employee_compensation` | 员工薪酬包（base / 奖金比例 / 长期激励） |
+| `benefit_plan` | 福利计划（核心 / 可选、人均成本） |
+| `employee_benefit` | 员工参保明细 |
+
+**HRIS · 绩效管理**
+
+| 表 | 说明 |
+| --- | --- |
+| `performance_goal` | 绩效目标 OKR / KPI |
+| `performance_review` | 绩效评估（自评 / 主管评 / 校准后） |
+| `calibration_session` | 校准会记录 |
+| `improvement_plan` | 绩效改进计划 PIP |
+
+**HRIS · 员工关系管理**
+
+| 表 | 说明 |
+| --- | --- |
 | `leave_request` | 请假申请 |
 | `attendance_record` | 每日考勤记录 |
+| `relation_case` | 员工关系事件（纠纷 / 申诉 / 关怀 / 合规） |
+| `engagement_survey` | 敬业度调查（五维 + eNPS） |
+
+**HRIS · 培训与开发**
+
+| 表 | 说明 |
+| --- | --- |
+| `training_course` | 培训课程（含关联能力项与结业等级） |
+| `training_enrollment` | 报名与完成记录 |
+
+**HRIS · 人力资源规划**
+
+| 表 | 说明 |
+| --- | --- |
+| `headcount_plan` | 部门编制计划 |
+| `workforce_forecast` | 人力供需预测（分情景） |
+| `attrition_risk` | 离职风险评分与六因子明细 |
 
 准备度取值：
 
@@ -548,16 +693,35 @@ smart-talent-agent
 │   │   ├── succession.py
 │   │   ├── idp.py
 │   │   ├── diagnosis.py
+│   │   ├── hris.py           # HRIS 统一入口 + /modules
+│   │   ├── hr/               # HRIS 六大模块路由
+│   │   │   ├── recruitment.py
+│   │   │   ├── compensation.py
+│   │   │   ├── performance.py
+│   │   │   ├── employee_relations.py
+│   │   │   ├── learning.py
+│   │   │   └── workforce.py
+│   │   ├── integrations.py   # HRIS 适配器接入（六大能力域）
 │   │   └── health.py
 │   │
 │   ├── config
 │   │   ├── settings.py       # 全局配置
-│   │   └── database.py       # 引擎与会话
+│   │   ├── database.py       # 引擎与会话
+│   │   └── migrate.py        # SQLite 列补齐
 │   │
 │   ├── llm
 │   │   └── llm_client.py     # Ollama / OpenAI 兼容客户端
 │   │
 │   ├── models                # ORM 模型
+│   │   ├── employee.py       # 员工 / 绩效 / 潜力 / 能力
+│   │   ├── talent.py         # 关键岗位 / 继任
+│   │   ├── development.py    # IDP / 课程 / 部门指标
+│   │   ├── recruitment.py        # HRIS 招聘管理
+│   │   ├── compensation.py       # HRIS 薪酬与福利
+│   │   ├── performance.py        # HRIS 绩效管理
+│   │   ├── employee_relations.py # HRIS 员工关系管理
+│   │   ├── learning.py           # HRIS 培训与开发
+│   │   └── workforce.py          # HRIS 人力资源规划
 │   │
 │   ├── schemas               # 请求响应模型
 │   │
@@ -567,8 +731,12 @@ smart-talent-agent
 │   │   ├── succession_service.py
 │   │   ├── idp_service.py
 │   │   ├── diagnosis_service.py
-│   │   ├── ats_service.py
-│   │   ├── hr_transaction_service.py
+│   │   ├── recruitment_service.py
+│   │   ├── compensation_service.py
+│   │   ├── performance_service.py
+│   │   ├── employee_relations_service.py
+│   │   ├── learning_service.py
+│   │   ├── workforce_service.py
 │   │   └── ai_service.py
 │   │
 │   ├── tools                 # Agent 调用的工具封装
@@ -576,21 +744,24 @@ smart-talent-agent
 │   │   ├── succession_tool.py
 │   │   ├── idp_tool.py
 │   │   ├── diagnosis_tool.py
-│   │   ├── ats_tool.py
-│   │   └── hr_transaction_tool.py
+│   │   ├── recruitment_tool.py
+│   │   ├── compensation_tool.py
+│   │   ├── performance_tool.py
+│   │   ├── employee_relations_tool.py
+│   │   ├── learning_tool.py
+│   │   └── workforce_tool.py
 │   │
-│   ├── integrations          # HRIS 适配器
-│   │   ├── hris_adapter.py
-│   │   ├── local_adapter.py
-│   │   └── sap_successfactors_adapter.py
+│   ├── integrations          # HRIS 适配器（六大能力域）
+│   │   ├── hris_adapter.py                 # 抽象接口 + 能力常量
+│   │   ├── local_adapter.py                # 本地 SQLite / MySQL
+│   │   └── sap_successfactors_adapter.py   # OData v2 接入骨架
 │   │
 │   └── main.py
 │
 ├── seed_data.py
 ├── test_agent.py
 ├── test_tool.py
-├── test_ats.py
-├── test_hr.py
+├── test_hris.py
 ├── test_llm.py
 ├── requirements.txt
 ├── env.example
@@ -771,26 +942,58 @@ GET /api/succession/pipeline
 GET /api/idp?name=李伟
 GET /api/diagnosis
 
-# ATS
-GET /api/ats/jobs
-POST /api/ats/screen?job=高级前端开发工程师&candidate=曹聪
-POST /api/ats/offer?candidate=曹聪&job=高级前端开发工程师
-GET /api/ats/funnel
-POST /api/ats/interview/proposal?job=高级前端开发工程师
+# HRIS · 招聘管理
+GET  /api/hris/recruitment/jobs
+GET  /api/hris/recruitment/funnel
+POST /api/hris/recruitment/screen?job=高级前端开发工程师
+POST /api/hris/recruitment/offer?candidate=曹聪&job=高级前端开发工程师
+POST /api/hris/recruitment/interview/proposal?job=高级前端开发工程师
 
-# HRIS 事务
-GET /api/hr/leave/balance?name=韩磊
-POST /api/hr/leave/request?name=韩磊&leave_type=annual&start_date=2025-10-10&end_date=2025-10-12&reason=家庭旅行
-POST /api/hr/leave/approve?request_id=8&approver=韩磊&approve=true
-GET /api/hr/leave/pending
-GET /api/hr/attendance?name=韩磊&days=30
+# HRIS · 薪酬与福利
+GET /api/hris/compensation/compa-ratio
+GET /api/hris/compensation/adjustment?budget_pct=5
+GET /api/hris/compensation/benefits
+GET /api/hris/compensation/summary?name=李伟
+
+# HRIS · 绩效管理
+GET /api/hris/performance/goals
+GET /api/hris/performance/deviation
+GET /api/hris/performance/distribution
+GET /api/hris/performance/improvement
+
+# HRIS · 员工关系管理
+GET  /api/hris/employee-relations/leave/balance?name=韩磊
+POST /api/hris/employee-relations/leave/submit?name=韩磊&days=3
+POST /api/hris/employee-relations/leave/approve?leave_id=8&approve=true
+GET  /api/hris/employee-relations/leave/pending
+GET  /api/hris/employee-relations/attendance?name=韩磊&days=30
+GET  /api/hris/employee-relations/cases
+GET  /api/hris/employee-relations/engagement
+
+# HRIS · 培训与开发
+GET /api/hris/learning/overview
+GET /api/hris/learning/compliance
+GET /api/hris/learning/recommend?name=李伟
+GET /api/hris/learning/effectiveness
+
+# HRIS · 人力资源规划
+GET /api/hris/workforce/headcount
+GET /api/hris/workforce/forecast?scenario=baseline
+GET /api/hris/workforce/attrition-risk
+GET /api/hris/workforce/succession-link
 
 # HRIS 集成
-GET /api/integrations/backends
-GET /api/integrations/ping?backend=local
-GET /api/integrations/employee/E0001?backend=local
+GET  /api/hris/modules
+GET  /api/integrations/backends
+GET  /api/integrations/ping?backend=local
+GET  /api/integrations/employee/E0001?backend=local
 POST /api/integrations/employee?backend=local
+GET  /api/integrations/recruitment/applications?backend=local
+GET  /api/integrations/compensation?backend=local
+POST /api/integrations/performance/reviews?backend=local
 POST /api/integrations/leave?backend=local
+POST /api/integrations/learning/records?backend=local
+GET  /api/integrations/workforce/headcount?backend=local
 ```
 
 ### 10. 查看与清空会话记忆
@@ -914,8 +1117,7 @@ LLM → 理解意图 → 抽取条件 → Python 业务计算 → 数据库 → 
 
 ### 3. Tool 化设计
 
-七类业务能力（九宫格、继任、梯队、IDP、诊断、ATS、HRIS）封装为独立 Tool，
-便于扩展与单独测试。
+十类业务能力封装为独立 Tool（人才管理四路 + HRIS 六路），便于扩展与单独测试。
 
 ### 4. 状态机与多轮记忆
 
@@ -957,6 +1159,7 @@ SQLite 零配置启动，MySQL 生产可用，仅改一行配置即可切换。
 - Agent
 - 结构化数据查询
 - 人才盘点与组织发展
+- HRIS 六大模块（招聘 / 薪酬福利 / 绩效 / 员工关系 / 培训 / 人力规划）
 - 多轮对话
 
 核心技术路线：
@@ -987,9 +1190,9 @@ MySQL / SQLite
 
 * * *
 
-## 三十、ATS 招聘管理
+## 三十、HRIS 模块算法详解
 
-### 简历筛选打分
+### 1. 招聘管理
 
 按权重对候选人与 JD 匹配度评分：
 
@@ -1010,9 +1213,7 @@ MySQL / SQLite
 | 55 ~ 69 | 待定（可面试） |
 | < 55 | 不推荐 |
 
-### 智能定薪
-
-按匹配分决定 base 档位：
+Offer 定薪按匹配分决定 base 档位：
 
 | 综合分 | base 在预算中的位置 |
 | --- | --- |
@@ -1021,50 +1222,38 @@ MySQL / SQLite
 | 55 ~ 69 | 60% |
 | < 55 | 50% |
 
-奖金：按经验年限分档（10% / 15% / 20% / 30%）；
-长期激励：高分高经验人才获取 10% ~ 20% RSU。
+奖金按经验年限分档（10% / 15% / 20% / 30%）；
+长期激励给高分高经验人才 10% ~ 20% RSU。
 输出 `base + bonus + equity` 三段式与 compa-ratio。
 
-### 漏斗与面试安排
+漏斗统计 `received / active / rejected / hired` 与三段转化率；
+面试安排自动推荐 3 位面试官（招聘经理 + 同部门 P7+/M 系列 + HR）与未来一周工作日时段。
 
-漏斗：
+### 2. 薪酬与福利
 
-| 指标 | 含义 |
-| --- | --- |
-| `received` | 收到申请数 |
-| `active` | 当前活跃数 |
-| `rejected` | 已淘汰数 |
-| `hired` | 已入职数 |
-| 阶段转化率 | 筛选→面试 / 面试→Offer / Offer→入职 |
+| 指标 | 公式 | 用途 |
+| --- | --- | --- |
+| compa-ratio | 个人固定薪 / 带宽中位值 | 内部公平性，健康区间 0.90 ~ 1.10 |
+| range penetration |（base − 下限）/（上限 − 下限） | 在带宽中的位置 |
+| 红圈 | base > 上限 | 超薪，建议冻结固定薪改用浮动激励 |
+| 绿圈 | base < 下限 | 欠薪，建议优先纳入调薪池 |
+| TCC | base + 目标奖金 + 长期激励 | 总现金薪酬 |
+| TDC | TCC + 年化福利成本 | 总直接薪酬 |
 
-面试安排：
-- 自动推荐 3 位面试官：招聘经理 + 同部门 P7+/M 系列资深员工 + HR
-- 推荐未来一周工作日 10:00 / 14:00 时段
+调薪模拟按"先补欠薪、再谈增长"的顺序分配预算，
+输出每人调薪额、调薪后 compa-ratio 与未覆盖人数。
 
-### 录用转换
+### 3. 绩效管理
 
-通过的候选人自动落库为正式员工，并初始化绩效与潜力记录（演示用 P50 起评）。
+- **目标达成**：加权达成率 = Σ(单条达成率 × 权重) / Σ 权重，达成率封顶 100%
+- **评价偏差**：Δ = 主管评 − 自评，|Δ| ≥ 1 判为严重偏差，需面谈对齐
+- **强制分布**：S ≤ 10%、A ≤ 25%、B 40%~70%、C 5%~20%、D ≤ 10%，
+  偏离时给出需调整的人头数与方向
+- **改进计划**：PIP 跟进，目标分与当前绩效分的差值即剩余改进空间
 
-### 当前演示数据示例
+### 4. 员工关系管理
 
-```
-简历筛选 · 高级前端开发工程师
-共评估 12 名候选人，分档：{'强烈推荐面试': 2, '推荐面试': 2, '待定（可面试）': 3, '不推荐': 5}
-
-Top 排名：
-- [强烈推荐面试] 曹聪（前 @ 腾讯）综合分 93.88｜技能 6/7｜经验 100｜学历 100
-- [强烈推荐面试] 郑一诺（前 @ 字节跳动）综合分 92.28｜技能 6/7
-- [推荐面试] 范雨欣（前 @ B站）综合分 81.77｜技能 5/7
-
-Offer 建议 · 曹聪 → 高级前端开发工程师
-评级 强烈推荐面试（综合分 93.88）
-建议 base：¥49,000｜奖金 ¥9,800（20% 比例）｜股权 ¥9,800
-总包：¥68,600｜compa-ratio 1.23
-```
-
-## 三十一、HRIS 员工事务
-
-### 年假规则（中国劳动法）
+法定年假（中国劳动法）：
 
 | 工龄 | 法定年假 |
 | --- | --- |
@@ -1074,54 +1263,99 @@ Offer 建议 · 曹聪 → 高级前端开发工程师
 | ≥ 20 年 | 15 天 |
 
 实际剩余 = 法定 − 已申请（pending + approved）。
+请假类型：`annual` 年假 / `sick` 病假 / `personal` 事假 / `compensatory` 调休 / `maternity` 产假。
 
-### 请假类型
+关系事件按严重度给 SLA：low 30 天、medium 14 天、high 7 天，超期即预警。
+敬业度取五维（工作本身 / 直属上级 / 成长发展 / 薪酬回报 / 工作生活平衡），
+eNPS = 推荐者占比 − 非推荐者占比。
 
-`annual` 年假 / `sick` 病假 / `personal` 事假 / `compensatory` 调休 / `maternity` 产假。
+### 5. 培训与开发
 
-### 考勤汇总
-
-默认返回最近 30 天的：出勤天数、迟到次数、缺勤天数、累计工时、平均工时、出勤率。
-
-### Agent 中自然语言例
-
-```
-用户：帮韩磊查一下年假余额
-意图：HR_TRANSACTION
-回答：
-年假余额 · 韩磊（技术中心）
-入职日期 2025-01-22，工龄 1.69 年
-法定年假 5 天，已用 0 天，剩余 5 天
-```
+课程推荐按能力差距排序：
 
 ```
-用户：韩磊想请 3 天年假
-意图：HR_TRANSACTION
-回答：
-请假申请已提交
-员工：韩磊｜类型：annual
-时间：2026-10-03 至 2026-10-05（3 天）｜状态：pending（申请 ID：8）
+gap = 岗位要求等级 − 现状等级
+gap ≥ 2 → 高优先；gap = 1 → 中优先
+同类课程取结业等级最高的那一门
 ```
 
-## 三十二、HRIS 系统集成（SAP SuccessFactors）
+必修合规率 = 实际完成人次 /（在职人数 × 必修课门数）。
+效果评估按课程的通过率、平均分、学员满意度排序，低于 3.5 分进入复盘清单。
 
-### 适配器抽象层
+### 6. 人力资源规划
 
-`HRISAdapter` 抽象接口，定义统一的：
+离职风险为六因子加权，合计 1.0：
 
-- `ping()` - 健康检查
-- `get_employee(employee_no)` - 拉取员工主数据
-- `upsert_employee(employee)` - 创建或更新员工
-- `push_attendance(records)` - 推送考勤记录
-- `push_leave_request(leave_request)` - 推送请假申请
+| 因子 | 权重 |
+| --- | --- |
+| 薪酬竞争力 | 0.20 |
+| 晋升停滞 | 0.20 |
+| 司龄过短 | 0.15 |
+| 绩效未被认可 | 0.15 |
+| 敬业度偏低 | 0.15 |
+| 市场机会吸引 | 0.15 |
+
+风险分 ≥ 70 为 high，≥ 45 为 medium。
+编制达成率 = 在编 / 编制；供需预测按
+`净需求 = 自然流失 + 业务增量`，`外部招聘需求 = 净需求 − 内部供给`。
+继任联动则把"高风险在岗"与"无继任候选人"两个集合求交，取最高优先级。
+
+### 当前演示数据示例
+
+```
+薪酬公平性：参与比对 67 人，平均 compa-ratio 1.192
+            低于下限 16 人（最低 0.658），高于上限 24 人
+
+调薪模拟：调薪池 5% = ¥1,373,439，可为 16 人补齐，支出 ¥772,811
+
+目标达成：跟踪 83 条目标，覆盖 40 人，平均达成率 68.9%
+
+必修合规：应完成 134 人次，实际 119 人次，合规率 88.8%，14 人存在缺口
+
+编制审查：达成率 83.8%（在编 67 / 编制 80），缺口 13 人，2 个部门缺口较大
+
+离职风险：扫描 67 人，高风险 6 人（占 9.0%）
+```
+
+## 三十一、HRIS 适配器六大能力域
+
+### 能力声明
+
+`HRISCapability` 定义六个常量，适配器通过 `capabilities` 声明自己支持哪些模块：
+
+```python
+class HRISCapability:
+    RECRUITMENT = "recruitment"            # 招聘管理
+    COMPENSATION = "compensation"          # 薪酬与福利
+    PERFORMANCE = "performance"            # 绩效管理
+    EMPLOYEE_RELATIONS = "employee_relations"  # 员工关系管理
+    LEARNING = "learning"                  # 培训与开发
+    WORKFORCE = "workforce"                # 人力资源规划
+```
+
+调用前用 `adapter.supports(capability)` 判定，避免打到厂商不支持的端点。
+
+### 各模块的方法契约
+
+| 模块 | 方法 |
+| --- | --- |
+| 招聘管理 | `pull_applications(req_no)` |
+| 薪酬与福利 | `pull_compensation(employee_nos)` / `push_compensation(records)` |
+| 绩效管理 | `push_performance_review(records)` |
+| 员工关系管理 | `push_attendance(records)` / `push_leave_request(dto)` |
+| 培训与开发 | `push_training_record(records)` |
+| 人力资源规划 | `pull_headcount(department)` |
+
+必选实现只有 `ping` / `get_employee` / `upsert_employee` 三个（主数据是集成前提），
+其余模块未实现时抛 `NotImplementedError`，由 `supports()` 在调用前拦截。
 
 ### 本地适配器（默认）
 
-直接读写本地 SQLite / MySQL，用于无外部 HRIS 时的演示与开发。
+直接读写本地 SQLite / MySQL，六大模块全部落地为库表读写。
 
-### SAP SuccessFactors 适配器（接入骨架）
+## 三十二、SAP SuccessFactors 接入骨架
 
-按 SAP SuccessFactors Employee Central OData v2 API 设计：
+按 Employee Central OData v2 设计：
 
 ```
 基础请求:
@@ -1130,13 +1364,21 @@ Offer 建议 · 曹聪 → 高级前端开发工程师
   Header  = Authorization: Bearer <token> 或 Basic <base64(user:pass)>
   公共参数 = ?companyID=<SF 公司 ID>&$format=JSON
 
-主要端点:
-  GET   /odata/v2/User('userName')                员工主数据
-  POST  /odata/v2/User                            新建员工
-  PATCH /odata/v2/User('userName')                更新员工
-  POST  /odata/v2/Timesheet                       考勤记录
-  POST  /odata/v2/LeaveRequest                    请假申请
+六模块端点映射:
+  招聘管理        JobApplication / JobRequisition / CandidateProfile / JobOffer
+  薪酬与福利      EmpCompensation / CompensationInfo / EmployeeBenefits
+  绩效管理        PerformanceReview / Goal / CalibrationSession
+  员工关系管理    EmpEmployment / Timesheet / LeaveRequest
+  培训与开发      LearningEvent（LMS 侧常用 Learning OData API）
+  人力资源规划    Position / PositionMatrixRelationship / EmpJob
+
+主数据:
+  GET   /odata/v2/User('userName')     员工主数据
+  POST  /odata/v2/User                新建员工
+  PATCH /odata/v2/User('userName')    更新员工
 ```
+
+映射表以常量形式固化在 `SF_ENTITY_MAP` 中，接入时可按租户版本调整。
 
 接入前在 `.env` 配置：
 
@@ -1156,12 +1398,17 @@ SAP_SF_PASSWORD=...
 
 ```
 GET  /api/integrations/ping?backend=sap_successfactors
-POST /api/integrations/employee?backend=sap_successfactors
+GET  /api/integrations/recruitment/applications?backend=sap_successfactors
+GET  /api/integrations/compensation?backend=sap_successfactors
+POST /api/integrations/performance/reviews?backend=sap_successfactors
 POST /api/integrations/leave?backend=sap_successfactors
+POST /api/integrations/learning/records?backend=sap_successfactors
+GET  /api/integrations/workforce/headcount?backend=sap_successfactors
 ```
 
-⚠️ 本骨架未在真实 SF 租户上完成端到端验证，
-请在企业环境中补充测试后再投入生产。
+⚠️ 本骨架未在真实 SF 租户上完成端到端验证。
+字段名与实体名在不同 SF 版本间存在差异，
+请在企业沙箱中先跑一次 `$metadata` 校验再投入生产。
 
 * * *
 

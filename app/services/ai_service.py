@@ -22,6 +22,7 @@ class AIService:
             "message": message,
             "request_type": state.get("request_type"),
             "active_topic": state.get("active_topic"),
+            "hris_module": state.get("hris_module"),
             "conditions": {
                 "department": state.get("department"),
                 "period": state.get("period"),
@@ -49,6 +50,7 @@ class AIService:
             },
             "preferences": values.get("preferences") or {},
             "active_topic": values.get("active_topic"),
+            "hris_module": values.get("hris_module"),
         }
 
     def reset(self, thread_id: str) -> dict[str, Any]:
