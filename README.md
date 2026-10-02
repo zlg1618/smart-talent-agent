@@ -1,7 +1,7 @@
 # Smart Talent Agent
 
 #### 介绍
-基于大模型、LangGraph、FastAPI 和 MySQL / SQLite 构建的Agent面向 HR 业务的多 Agent 智能体系统。
+基于大模型、LangGraph、FastAPI 和 MySQL / SQLite 构建的项目面向HR业务的多 Agent 智能体系统。
 
 
 #### 软件架构
