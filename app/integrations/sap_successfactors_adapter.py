@@ -1,6 +1,7 @@
 """SAP SuccessFactors Employee Central OData v2 适配器骨架。
 
-⚠️ 本实现为接入参考代码，没有真实租户环境做端到端验证。
+⚠️ 本实现为接入骨架代码，未在真实租户上做端到端验证。
+生产部署前请在目标 SF 沙箱跑一遍回归后再切换。
 
 接入前准备：
     1. 在 SuccessFactors 租户上启用 OData API 与 OAuth2 SAML Bearer / Basic Auth。
