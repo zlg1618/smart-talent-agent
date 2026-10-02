@@ -51,7 +51,28 @@
 基于部门级指标（离职率、平均绩效、高潜占比、管理幅度、平均司龄）计算健康分，
 输出问题清单与改进建议。
 
-### 6. 用户意图识别
+### 6. ATS 招聘管理
+
+- 简历筛选：技能/经验/学历/期望薪资/当前职级加权打分，自动分档
+- 智能定薪：按匹配分与经验年限给出 base + 奖金 + 长期激励建议
+- 面试安排：推荐面试官与未来一周可预约时段
+- 招聘漏斗：各阶段候选人数量与转化率统计
+- 录用转换：通过的候选人落库为正式员工
+
+### 7. HRIS 员工事务
+
+- 年假余额：按中国劳动法计算法定年假、已用、剩余
+- 请假申请：提交年假/病假/事假/调休/产假
+- 请假审批：批准或驳回
+- 考勤汇总：出勤率、迟到次数、缺勤天数、平均工时
+
+### 8. HRIS 系统集成
+
+- 抽象 `HRISAdapter` 接口：员工、考勤、请假标准化操作
+- `LocalHRISAdapter`：直接读写本地 SQLite / MySQL（默认）
+- `SAPSuccessFactorsAdapter`：SAP SuccessFactors Employee Central OData v2 接入骨架
+
+### 9. 用户意图识别
 
 | 意图 | 说明 |
 | --- | --- |
@@ -59,6 +80,8 @@
 | SUCCESSION | 继任地图、接班人、人才梯队 |
 | IDP | 个人发展计划、培养方案 |
 | DIAGNOSIS | 组织诊断、组织健康度 |
+| ATS | 招聘管理（简历筛选、智能定薪、面试安排、漏斗） |
+| HR_TRANSACTION | 员工事务（请假、考勤） |
 | UPDATE | 修改部门、周期、职级、员工 |
 | PREFERENCE | 设置筛选偏好（只看某类人才、排除某些情况） |
 | CHAT | 普通对话 |
@@ -76,7 +99,12 @@
 
 支持"只看明星人才""只看高潜""排除未就绪候选人"，也支持"不限""取消筛选"清空偏好。
 
-### 10. 数据真实性控制
+### 10. ATS / HRIS 上下文复用
+
+切换到「请这次人才盘点」后再询问「帮韩磊查一下年假余额」，
+对话主题会从 ATS 切换到 HR_TRANSACTION，但公司、部门等上下文继续生效。
+
+### 11. 数据真实性控制
 
 所有人才数据、评级与建议均来自数据库与确定性计算，
 系统中不存在的员工与岗位不会被虚构出来。
@@ -230,6 +258,8 @@ extract_info（抽取部门 / 周期 / 职级 / 员工）
 - `SUCCESSION`：继任地图或人才梯队
 - `IDP`：个人发展计划
 - `DIAGNOSIS`：组织诊断
+- `ATS`：招聘管理
+- `HR_TRANSACTION`：员工事务
 - `UPDATE`：更新盘点条件后**沿用上一主题重新计算**
 - `PREFERENCE`：更新筛选偏好后**沿用上一主题重新计算**
 - `CHAT`：普通对话
@@ -433,6 +463,14 @@ Agent 自动回退到**规则引擎**：
 | `course` | 学习资源（项目 / 导师 / 线上 / 线下） |
 | `idp` | 个人发展计划 |
 | `department_metric` | 部门级组织诊断指标 |
+| `job_post` | 招聘需求 / JD |
+| `candidate` | 候选人主数据 |
+| `candidate_skill` | 候选人技能明细 |
+| `application` | 申请（招聘漏斗的一个环节） |
+| `interview_schedule` | 面试安排 |
+| `offer_record` | Offer 记录（base / 奖金 / 股权 / 总包 / compa-ratio） |
+| `leave_request` | 请假申请 |
+| `attendance_record` | 每日考勤记录 |
 
 准备度取值：
 
@@ -485,19 +523,30 @@ smart-talent-agent
 │   │   ├── succession_service.py
 │   │   ├── idp_service.py
 │   │   ├── diagnosis_service.py
+│   │   ├── ats_service.py
+│   │   ├── hr_transaction_service.py
 │   │   └── ai_service.py
 │   │
 │   ├── tools                 # Agent 调用的工具封装
 │   │   ├── talent_review_tool.py
 │   │   ├── succession_tool.py
 │   │   ├── idp_tool.py
-│   │   └── diagnosis_tool.py
+│   │   ├── diagnosis_tool.py
+│   │   ├── ats_tool.py
+│   │   └── hr_transaction_tool.py
+│   │
+│   ├── integrations          # HRIS 适配器
+│   │   ├── hris_adapter.py
+│   │   ├── local_adapter.py
+│   │   └── sap_successfactors_adapter.py
 │   │
 │   └── main.py
 │
 ├── seed_data.py
 ├── test_agent.py
 ├── test_tool.py
+├── test_ats.py
+├── test_hr.py
 ├── test_llm.py
 ├── requirements.txt
 ├── env.example
@@ -677,6 +726,27 @@ GET /api/succession/map
 GET /api/succession/pipeline
 GET /api/idp?name=李伟
 GET /api/diagnosis
+
+# ATS
+GET /api/ats/jobs
+POST /api/ats/screen?job=高级前端开发工程师&candidate=曹聪
+POST /api/ats/offer?candidate=曹聪&job=高级前端开发工程师
+GET /api/ats/funnel
+POST /api/ats/interview/proposal?job=高级前端开发工程师
+
+# HRIS 事务
+GET /api/hr/leave/balance?name=韩磊
+POST /api/hr/leave/request?name=韩磊&leave_type=annual&start_date=2025-10-10&end_date=2025-10-12&reason=家庭旅行
+POST /api/hr/leave/approve?request_id=8&approver=韩磊&approve=true
+GET /api/hr/leave/pending
+GET /api/hr/attendance?name=韩磊&days=30
+
+# HRIS 集成
+GET /api/integrations/backends
+GET /api/integrations/ping?backend=local
+GET /api/integrations/employee/E0001?backend=local
+POST /api/integrations/employee?backend=local
+POST /api/integrations/leave?backend=local
 ```
 
 ### 10. 查看与清空会话记忆
@@ -867,6 +937,184 @@ MySQL / SQLite
 - 数据库查询
 - 业务规则控制
 - 多轮对话
+
+* * *
+
+## 三十一、ATS 招聘管理
+
+### 简历筛选打分
+
+按权重对候选人与 JD 匹配度评分：
+
+| 维度 | 权重 | 评分逻辑 |
+| --- | --- | --- |
+| 技能匹配 | 40% | 候选人命中技能数 / JD 必备技能数 |
+| 经验 | 20% | 与 JD 要求年限差距决定 100 / 80 / 40 / 0 |
+| 学历 | 15% | 大专、本科、硕士、博士相对 JD 要求差距 |
+| 期望薪资 | 15% | 中位期望与岗位预算上限的关系 |
+| 当前职级 | 10% | 按经验年限近似量化 |
+
+等级分档：
+
+| 分档 | 含义 |
+| --- | --- |
+| ≥ 85 | 强烈推荐面试 |
+| 70 ~ 84 | 推荐面试 |
+| 55 ~ 69 | 待定（可面试） |
+| < 55 | 不推荐 |
+
+### 智能定薪
+
+按匹配分决定 base 档位：
+
+| 综合分 | base 在预算中的位置 |
+| --- | --- |
+| ≥ 85 | 95% |
+| 70 ~ 84 | 80% |
+| 55 ~ 69 | 60% |
+| < 55 | 50% |
+
+奖金：按经验年限分档（10% / 15% / 20% / 30%）；
+长期激励：高分高经验人才获取 10% ~ 20% RSU。
+输出 `base + bonus + equity` 三段式与 compa-ratio。
+
+### 漏斗与面试安排
+
+漏斗：
+
+| 指标 | 含义 |
+| --- | --- |
+| `received` | 收到申请数 |
+| `active` | 当前活跃数 |
+| `rejected` | 已淘汰数 |
+| `hired` | 已入职数 |
+| 阶段转化率 | 筛选→面试 / 面试→Offer / Offer→入职 |
+
+面试安排：
+- 自动推荐 3 位面试官：招聘经理 + 同部门 P7+/M 系列资深员工 + HR
+- 推荐未来一周工作日 10:00 / 14:00 时段
+
+### 录用转换
+
+通过的候选人自动落库为正式员工，并初始化绩效与潜力记录（演示用 P50 起评）。
+
+### 当前演示数据示例
+
+```
+简历筛选 · 高级前端开发工程师
+共评估 12 名候选人，分档：{'强烈推荐面试': 2, '推荐面试': 2, '待定（可面试）': 3, '不推荐': 5}
+
+Top 排名：
+- [强烈推荐面试] 曹聪（前 @ 腾讯）综合分 93.88｜技能 6/7｜经验 100｜学历 100
+- [强烈推荐面试] 郑一诺（前 @ 字节跳动）综合分 92.28｜技能 6/7
+- [推荐面试] 范雨欣（前 @ B站）综合分 81.77｜技能 5/7
+
+Offer 建议 · 曹聪 → 高级前端开发工程师
+评级 强烈推荐面试（综合分 93.88）
+建议 base：¥49,000｜奖金 ¥9,800（20% 比例）｜股权 ¥9,800
+总包：¥68,600｜compa-ratio 1.23
+```
+
+## 三十二、HRIS 员工事务
+
+### 年假规则（中国劳动法）
+
+| 工龄 | 法定年假 |
+| --- | --- |
+| < 1 年 | 0 天 |
+| 1 ~ 10 年 | 5 天 |
+| 10 ~ 20 年 | 10 天 |
+| ≥ 20 年 | 15 天 |
+
+实际剩余 = 法定 − 已申请（pending + approved）。
+
+### 请假类型
+
+`annual` 年假 / `sick` 病假 / `personal` 事假 / `compensatory` 调休 / `maternity` 产假。
+
+### 考勤汇总
+
+默认返回最近 30 天的：出勤天数、迟到次数、缺勤天数、累计工时、平均工时、出勤率。
+
+### Agent 中自然语言例
+
+```
+用户：帮韩磊查一下年假余额
+意图：HR_TRANSACTION
+回答：
+年假余额 · 韩磊（技术中心）
+入职日期 2025-01-22，工龄 1.69 年
+法定年假 5 天，已用 0 天，剩余 5 天
+```
+
+```
+用户：韩磊想请 3 天年假
+意图：HR_TRANSACTION
+回答：
+请假申请已提交
+员工：韩磊｜类型：annual
+时间：2026-10-03 至 2026-10-05（3 天）｜状态：pending（申请 ID：8）
+```
+
+## 三十三、HRIS 系统集成（SAP SuccessFactors）
+
+### 适配器抽象层
+
+`HRISAdapter` 抽象接口，定义统一的：
+
+- `ping()` - 健康检查
+- `get_employee(employee_no)` - 拉取员工主数据
+- `upsert_employee(employee)` - 创建或更新员工
+- `push_attendance(records)` - 推送考勤记录
+- `push_leave_request(leave_request)` - 推送请假申请
+
+### 本地适配器（默认）
+
+直接读写本地 SQLite / MySQL，用于无外部 HRIS 时的演示与开发。
+
+### SAP SuccessFactors 适配器（接入骨架）
+
+按 SAP SuccessFactors Employee Central OData v2 API 设计：
+
+```
+基础请求:
+  BaseURL = https://{tenant}.api.successfactors.com
+  Auth    = OAuth2 Client Credentials 或 Basic
+  Header  = Authorization: Bearer <token> 或 Basic <base64(user:pass)>
+  公共参数 = ?companyID=<SF 公司 ID>&$format=JSON
+
+主要端点:
+  GET   /odata/v2/User('userName')                员工主数据
+  POST  /odata/v2/User                            新建员工
+  PATCH /odata/v2/User('userName')                更新员工
+  POST  /odata/v2/Timesheet                       考勤记录
+  POST  /odata/v2/LeaveRequest                    请假申请
+```
+
+接入前在 `.env` 配置：
+
+```
+SAP_SF_BASE_URL=https://{tenant}.api.successfactors.com
+SAP_SF_COMPANY_ID=...
+SAP_SF_AUTH_MODE=oauth   # 或 basic
+SAP_SF_CLIENT_ID=...     # OAuth 模式
+SAP_SF_CLIENT_SECRET=...
+SAP_SF_TOKEN_URL=https://{tenant}.auth.successfactors.com/oauth/token
+# 或者 Basic 模式
+SAP_SF_USER=...
+SAP_SF_PASSWORD=...
+```
+
+使用：
+
+```
+GET  /api/integrations/ping?backend=sap_successfactors
+POST /api/integrations/employee?backend=sap_successfactors
+POST /api/integrations/leave?backend=sap_successfactors
+```
+
+⚠️ 本骨架未在真实 SF 租户上完成端到端验证，
+请在企业环境中补充测试后再投入生产。
 
 * * *
 

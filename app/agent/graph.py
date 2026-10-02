@@ -27,19 +27,35 @@ from app.config.database import SessionLocal
 from app.llm import get_llm_client
 from app.models import PerformanceRecord
 from app.services import employee_service
-from app.tools import diagnosis_tool, idp_tool, succession_tool, talent_review_tool
+from app.tools import (
+    ats_tool,
+    diagnosis_tool,
+    hr_transaction_tool,
+    idp_tool,
+    succession_tool,
+    talent_review_tool,
+)
 
 VALID_INTENTS = {
     "TALENT_REVIEW",
     "SUCCESSION",
     "IDP",
     "DIAGNOSIS",
+    "ATS",
+    "HR_TRANSACTION",
     "UPDATE",
     "PREFERENCE",
     "CHAT",
 }
 
-BUSINESS_INTENTS = {"TALENT_REVIEW", "SUCCESSION", "IDP", "DIAGNOSIS"}
+BUSINESS_INTENTS = {
+    "TALENT_REVIEW",
+    "SUCCESSION",
+    "IDP",
+    "DIAGNOSIS",
+    "ATS",
+    "HR_TRANSACTION",
+}
 
 PIPELINE_KEYWORDS = ["梯队", "断层", "职级分布", "储备", "供给"]
 
@@ -208,6 +224,53 @@ def diagnosis_node(state: AgentState) -> dict:
     return {"result": result, "result_topic": "DIAGNOSIS"}
 
 
+def ats_node(state: AgentState) -> dict:
+    message = state.get("user_message", "")
+    db = SessionLocal()
+    try:
+        department = state.get("department")
+        if any(k in message for k in ["漏斗", "招聘进展", "招聘报告"]):
+            result = ats_tool.run_funnel(db, department=department)
+            topic = "ATS_FUNNEL"
+        elif any(k in message for k in ["定薪", "Offer", "offer"]):
+            result = ats_tool.run_suggest_offer(db, message)
+            topic = "ATS_OFFER"
+        elif any(k in message for k in ["面试安排", "安排面试", "面试时间", "推荐面试"]):
+            result = ats_tool.run_interview_proposal(db, message)
+            topic = "ATS_INTERVIEW"
+        else:
+            result = ats_tool.run_screen_for_job(db, message)
+            topic = "ATS_SCREEN"
+    finally:
+        db.close()
+    return {"result": result, "result_topic": topic}
+
+
+def hr_transaction_node(state: AgentState) -> dict:
+    message = state.get("user_message", "")
+    db = SessionLocal()
+    try:
+        employee_name = state.get("employee_name")
+        if any(k in message for k in ["提交", "申请", "我要请", "请个", "请了", "想请", "请下", "请一天", "请假"]):
+            result = hr_transaction_tool.run_submit_leave(db, message, employee_name=employee_name)
+            topic = "HR_LEAVE_REQUEST"
+        elif any(k in message for k in ["批准", "通过", "驳回", "拒绝"]):
+            result = hr_transaction_tool.run_approve_leave(db, message)
+            topic = "HR_LEAVE_APPROVE"
+        elif any(k in message for k in ["考勤", "出勤"]):
+            result = hr_transaction_tool.run_attendance(db, message, employee_name=employee_name)
+            topic = "HR_ATTENDANCE"
+        elif any(k in message for k in ["待审批", "待处理请假"]):
+            result = hr_transaction_tool.run_pending_leaves(db, message)
+            topic = "HR_LEAVE_PENDING"
+        else:
+            result = hr_transaction_tool.run_leave_balance(db, message, employee_name=employee_name)
+            topic = "HR_LEAVE_BALANCE"
+    finally:
+        db.close()
+    return {"result": result, "result_topic": topic}
+
+
 def chat_node(state: AgentState) -> dict:
     message = state.get("user_message", "")
     llm = get_llm_client()
@@ -311,6 +374,8 @@ def route_by_topic(state: AgentState) -> str:
         "SUCCESSION": "succession",
         "IDP": "idp",
         "DIAGNOSIS": "diagnosis",
+        "ATS": "ats",
+        "HR_TRANSACTION": "hr_transaction",
     }
     return mapping.get(topic, "generate_answer")
 
@@ -330,6 +395,8 @@ def build_graph():
     graph.add_node("succession", succession_node)
     graph.add_node("idp", idp_node)
     graph.add_node("diagnosis", diagnosis_node)
+    graph.add_node("ats", ats_node)
+    graph.add_node("hr_transaction", hr_transaction_node)
     graph.add_node("chat", chat_node)
     graph.add_node("generate_answer", generate_answer)
 
@@ -353,6 +420,8 @@ def build_graph():
             "succession": "succession",
             "idp": "idp",
             "diagnosis": "diagnosis",
+            "ats": "ats",
+            "hr_transaction": "hr_transaction",
             "generate_answer": "generate_answer",
         },
     )
@@ -361,6 +430,8 @@ def build_graph():
     graph.add_edge("succession", "generate_answer")
     graph.add_edge("idp", "generate_answer")
     graph.add_edge("diagnosis", "generate_answer")
+    graph.add_edge("ats", "generate_answer")
+    graph.add_edge("hr_transaction", "generate_answer")
     # 设置偏好后沿用上一轮的业务主题重新计算，
     # 例如"做一次盘点"之后说"只看明星人才"会直接给出过滤后的结果。
     graph.add_conditional_edges(
@@ -371,6 +442,8 @@ def build_graph():
             "succession": "succession",
             "idp": "idp",
             "diagnosis": "diagnosis",
+            "ats": "ats",
+            "hr_transaction": "hr_transaction",
             "generate_answer": "generate_answer",
         },
     )

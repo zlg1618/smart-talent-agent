@@ -42,13 +42,21 @@ def get_db():
 def init_db():
     """建表。导入所有模型后再调用，否则表不会被创建。"""
     from app.models import (  # noqa: F401
+        Application,
+        AttendanceRecord,
+        Candidate,
+        CandidateSkill,
         Competency,
         Course,
         DepartmentMetric,
         Employee,
         EmployeeCompetency,
         IDP,
+        InterviewSchedule,
+        JobPost,
         KeyPosition,
+        LeaveRequest,
+        OfferRecord,
         PerformanceRecord,
         PotentialAssessment,
         SuccessionPlan,

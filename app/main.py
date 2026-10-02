@@ -6,10 +6,13 @@ from fastapi import FastAPI
 
 from app.api import (
     ai,
+    ats,
     diagnosis,
     employee,
     health,
+    hr_transaction,
     idp,
+    integrations,
     succession,
     talent_review,
 )
@@ -38,6 +41,9 @@ app.include_router(talent_review.router)
 app.include_router(succession.router)
 app.include_router(idp.router)
 app.include_router(diagnosis.router)
+app.include_router(ats.router)
+app.include_router(hr_transaction.router)
+app.include_router(integrations.router)
 
 
 @app.get("/")

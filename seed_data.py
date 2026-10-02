@@ -11,23 +11,32 @@
 import argparse
 import random
 import sys
-from datetime import date
+from datetime import date, datetime, time as dtime, timedelta
 
 from sqlalchemy import delete, select
 
 from app.config.database import SessionLocal, init_db
 from app.models import (
+    Application,
+    AttendanceRecord,
+    Candidate,
+    CandidateSkill,
     Competency,
     Course,
     DepartmentMetric,
     Employee,
     EmployeeCompetency,
     IDP,
+    InterviewSchedule,
+    JobPost,
     KeyPosition,
+    LeaveRequest,
+    OfferRecord,
     PerformanceRecord,
     PotentialAssessment,
     SuccessionPlan,
 )
+from datetime import time as dtime, timedelta
 
 random.seed(42)
 
@@ -138,6 +147,14 @@ def _hire_date() -> date:
 
 def clear_all(db):
     for table in (
+        OfferRecord,
+        InterviewSchedule,
+        Application,
+        CandidateSkill,
+        Candidate,
+        JobPost,
+        AttendanceRecord,
+        LeaveRequest,
         IDP,
         SuccessionPlan,
         KeyPosition,
@@ -154,6 +171,7 @@ def clear_all(db):
 
 
 def seed(db):
+    now_dt = datetime.now()
     total = sum(d["headcount"] for d in DEPARTMENTS.values())
     names = _unique_names(total)
 
@@ -336,6 +354,239 @@ def seed(db):
                 status="进行中",
             )
         )
+
+    # ---------- ATS 招聘需求 ----------
+    job_defs = [
+        ("高级前端开发工程师", "技术中心", 2, "bachelor", 5, 30000, 50000,
+         "前端,JavaScript,CSS,React,Vue,Webpack,TypeScript"),
+        ("高级后端开发工程师", "技术中心", 3, "bachelor", 5, 30000, 60000,
+         "后端,Python,Java,MySQL,Redis,系统设计,Kafka"),
+        ("产品经理", "产品部", 2, "bachelor", 3, 25000, 40000,
+         "产品思维,用户研究,数据分析,商业敏感,沟通表达"),
+        ("销售经理", "销售部", 1, "bachelor", 3, 20000, 35000,
+         "销售管理,大客户管理,沟通表达,商业敏感"),
+        ("财务分析师", "财务部", 1, "bachelor", 1, 15000, 25000,
+         "财务分析,数据分析,商业敏感,沟通表达"),
+    ]
+    jobs: list[JobPost] = []
+    tech_hm_emp = next((e for e in employees if e.department == "技术中心" and e.job_level == "M3"), None)
+    product_hm = next((e for e in employees if e.department == "产品部" and e.job_level == "M2"), None)
+    sales_hm = next((e for e in employees if e.department == "销售部" and e.job_level == "M2"), None)
+    finance_hm = next((e for e in employees if e.department == "财务部" and e.job_level == "M1"), None)
+    hiring_managers = {
+        "技术中心": tech_hm_emp,
+        "产品部": product_hm,
+        "销售部": sales_hm,
+        "财务部": finance_hm,
+    }
+    for title, dept, hc, degree, miny, smin, smax, skills in job_defs:
+        jd_text = (
+            f"岗位职责：负责 {title} 的开发与交付；"
+            f"任职要求：{miny} 年以上相关经验，{degree} 及以上学历。"
+        )
+        j = JobPost(
+            title=title,
+            department=dept,
+            headcount=hc,
+            jd_text=jd_text,
+            required_skills=skills,
+            min_degree=degree,
+            min_years=miny,
+            salary_min=smin,
+            salary_max=smax,
+            hiring_manager_id=(hiring_managers.get(dept) and hiring_managers[dept].id),
+            status="open",
+            opened_at=date.today() - timedelta(days=random.randint(5, 60)),
+        )
+        db.add(j)
+        jobs.append(j)
+    db.flush()
+
+    # ---------- 候选人 ----------
+    candidate_defs = [
+        ("郑一诺", "research1@example.com", "前端工程师", "字节跳动", 5.0, "bachelor", 28000, 38000,
+         ["前端", "JavaScript", "CSS", "React", "Vue", "TypeScript"], [5, 5, 5, 5, 4, 3]),
+        ("曹聪", "cong@example.com", "前端工程师", "腾讯", 7.0, "master", 35000, 50000,
+         ["前端", "JavaScript", "CSS", "React", "Webpack", "TypeScript"], [5, 5, 4, 5, 5, 5]),
+        ("冯浩然", "haoran@example.com", "前端工程师", "美团", 3.0, "bachelor", 22000, 30000,
+         ["前端", "JavaScript", "CSS", "Vue"], [4, 4, 4, 4, 0, 0]),
+        ("林俊", "linjun@example.com", "后端工程师", "阿里云", 6.0, "bachelor", 35000, 55000,
+         ["后端", "Python", "Java", "MySQL", "Redis", "系统设计"], [5, 5, 5, 5, 5, 4]),
+        ("韩丽", "hanli@example.com", "后端工程师", "滴滴", 4.0, "bachelor", 30000, 45000,
+         ["后端", "Python", "MySQL", "Redis"], [4, 4, 4, 4, 0, 0]),
+        ("潘思远", "sipan@example.com", "后端工程师", "网易", 8.0, "master", 40000, 65000,
+         ["后端", "Java", "Python", "MySQL", "Redis", "Kafka", "系统设计"], [5, 5, 5, 5, 5, 4, 5]),
+        ("蒋一鸣", "yiming@example.com", "产品经理", "小米", 4.0, "bachelor", 25000, 38000,
+         ["产品思维", "用户研究", "数据分析", "沟通表达"], [5, 5, 4, 4, 0, 0]),
+        ("钱若曦", "ruoxi@example.com", "高级产品经理", "快手", 6.0, "master", 35000, 55000,
+         ["产品思维", "用户研究", "数据分析", "商业敏感", "沟通表达"], [5, 5, 5, 5, 5]),
+        ("薛平", "xueping@example.com", "销售经理", "美的", 5.0, "bachelor", 20000, 32000,
+         ["销售管理", "大客户管理", "沟通表达", "商业敏感"], [4, 5, 5, 4]),
+        ("邓洋", "dengyang@example.com", "财务分析师", "京东", 2.0, "bachelor", 12000, 18000,
+         ["财务分析", "数据分析"], [4, 3, 0, 0]),
+        ("钱宇", "qianyu@example.com", "财务分析师", "联想", 4.0, "master", 18000, 28000,
+         ["财务分析", "数据分析", "商业敏感", "沟通表达"], [5, 5, 4, 5]),
+        ("范雨欣", "ifine@example.com", "前端工程师", "B站", 4.0, "bachelor", 32000, 48000,
+         ["前端", "JavaScript", "React", "Vue", "Webpack"], [5, 5, 5, 5, 4]),
+    ]
+    candidates: list[Candidate] = []
+    for cname, email, title, company, years, degree, esmin, esmax, skills, profs in candidate_defs:
+        cand = Candidate(
+            name=cname,
+            email=email,
+            phone=f"138{random.randint(10000000, 99999999)}",
+            current_title=title,
+            current_company=company,
+            years_exp=years,
+            degree=degree,
+            expected_salary_min=esmin,
+            expected_salary_max=esmax,
+            resume_text=f"{cname}，{years} 年{title}经验，现就职于{company}。",
+            source=random.choice(["招聘网站", "内推", "LinkedIn", "猎头"]),
+        )
+        db.add(cand)
+        candidates.append(cand)
+    db.flush()
+
+    # 候选人技能
+    for cand, cdef in zip(candidates, candidate_defs):
+        skill_names = cdef[8]
+        profs = cdef[9]
+        for sname, prof in zip(skill_names, profs):
+            db.add(
+                CandidateSkill(
+                    candidate_id=cand.id,
+                    skill=sname,
+                    proficiency=prof,
+                    years_used=round(cand.years_exp * random.uniform(0.5, 1.0), 1),
+                )
+            )
+
+    # ---------- 申请（招聘漏斗） ----------
+    pipeline_template = [
+        (0, 0, "screening", "简历筛选", 78.0),
+        (1, 0, "interview", "HR 面", 88.5),
+        (2, 0, "offer", "Offer 谈判", 65.0),
+        (3, 1, "interview", "技术面", 85.0),
+        (4, 1, "screening", "简历筛选", 72.0),
+        (5, 1, "offer", "Offer 谈判", 92.0),
+        (6, 2, "rejected", "已淘汰", 45.0),
+        (7, 2, "interview", "终面", 87.0),
+        (8, 3, "interview", "HR 面", 78.0),
+        (9, 3, "screening", "简历筛选", 70.0),
+        (10, 4, "screening", "简历筛选", 82.0),
+        (11, 0, "screening", "简历筛选", 60.0),
+    ]
+    now_dt = now_dt
+    applications: list[Application] = []
+    for idx, (cand_idx, job_idx, status, round_name, score) in enumerate(pipeline_template):
+        if cand_idx >= len(candidates) or job_idx >= len(jobs):
+            continue
+        app = Application(
+            candidate_id=candidates[cand_idx].id,
+            job_post_id=jobs[job_idx].id,
+            applied_at=now_dt - timedelta(days=random.randint(2, 30)),
+            status=status,
+            current_round=round_name,
+            overall_score=score,
+        )
+        db.add(app)
+        applications.append(app)
+    db.flush()
+
+    # 面试安排：给 interview 状态的申请补充面试
+    for app in applications:
+        if app.status != "interview":
+            continue
+        interviewer = db.get(Employee, jobs[0].hiring_manager_id) if jobs[0].hiring_manager_id else None
+        if not interviewer:
+            interviewer = next((e for e in employees if e.department == "技术中心" and e.job_level in ["M1", "M2", "M3"]), None)
+        if not interviewer:
+            continue
+        db.add(
+            InterviewSchedule(
+                application_id=app.id,
+                round_name=app.current_round,
+                interviewer_id=interviewer.id,
+                scheduled_at=now_dt + timedelta(days=random.randint(1, 7)),
+                mode="onsite",
+                score=random.randint(3, 5),
+                feedback="技术基础扎实，沟通良好。",
+                decision="pending",
+            )
+        )
+
+    # Offer 记录：给 offer 状态的申请
+    for app in applications:
+        if app.status != "offer":
+            continue
+        cand = db.get(Candidate, app.candidate_id)
+        job = db.get(JobPost, app.job_post_id)
+        base = int(job.salary_min + (job.salary_max - job.salary_min) * 0.85)
+        bonus = int(base * 0.20)
+        equity = int(base * 0.10)
+        db.add(
+            OfferRecord(
+                application_id=app.id,
+                base_salary=base,
+                bonus=bonus,
+                equity=equity,
+                total_package=base + bonus + equity,
+                compa_ratio=round(base / ((job.salary_min + job.salary_max) / 2), 2),
+                start_date=date.today() + timedelta(days=30),
+                expires_at=date.today() + timedelta(days=14),
+                status="pending",
+            )
+        )
+
+    # ---------- HRIS 事务：请假 + 考勤 ----------
+    sample_employees = random.sample(employees, min(15, len(employees)))
+    for emp in sample_employees:
+        # 过去 30 天考勤：工作日出勤
+        today = date.today()
+        for d_offset in range(1, 31):
+            d = today - timedelta(days=d_offset)
+            if d.weekday() >= 5:
+                continue
+            late = random.random() < 0.08
+            absent = random.random() < 0.03
+            check_in = dtime(9, random.randint(0, 30)) if not late else dtime(9, random.randint(31, 59))
+            check_out = dtime(18, random.randint(0, 59))
+            hours = 8.5 if not absent else 0.0
+            db.add(
+                AttendanceRecord(
+                    employee_id=emp.id,
+                    date=d,
+                    check_in=check_in,
+                    check_out=check_out,
+                    is_late=late,
+                    is_absent=absent,
+                    hours=hours,
+                )
+            )
+
+    # 几条示例请假
+    if len(sample_employees) >= 5:
+        for emp, leave_type, days_ago, ndays in [
+            (sample_employees[0], "annual", 12, 2),
+            (sample_employees[1], "sick", 5, 1),
+            (sample_employees[2], "personal", 25, 1),
+            (sample_employees[3], "annual", 3, 3),
+            (sample_employees[4], "compensatory", 60, 1),
+        ]:
+            start = date.today() - timedelta(days=days_ago)
+            end = start + timedelta(days=ndays - 1)
+            db.add(
+                LeaveRequest(
+                    employee_id=emp.id,
+                    leave_type=leave_type,
+                    start_date=start,
+                    end_date=end,
+                    days=float(ndays),
+                    reason="年度休假",
+                    status=random.choice(["approved", "pending", "approved"]),
+                )
+            )
 
     db.commit()
     return {
