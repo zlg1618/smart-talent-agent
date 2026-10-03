@@ -16,8 +16,6 @@ from app.models import (
     Employee,
     HeadcountPlan,
     JobPost,
-    KeyPosition,
-    SuccessionPlan,
     WorkforceForecast,
 )
 
@@ -261,9 +259,8 @@ def attrition_risk_scan(
     high = [r for r in rows if r["risk_level"] == "high"]
     medium = [r for r in rows if r["risk_level"] == "medium"]
 
-    # 关键岗位交叉风险：既是关键岗又是高风险
-    key_emp_ids = {p.incumbent_id for p in db.execute(select(KeyPosition)).scalars().all()}
-    critical = [r for r in high if r["id"] in key_emp_ids]
+    # 关键人群交叉风险：管理序列（M）与高职级（P7+）一旦流失影响更大
+    critical = [r for r in high if _is_critical_role(r.get("job_level"))]
 
     return {
         "department": department or "全部部门",
@@ -277,13 +274,25 @@ def attrition_risk_scan(
             f"扫描 {len(rows)} 人，高风险 {len(high)} 人（占 "
             f"{round(len(high) / len(rows) * 100, 1) if rows else 0}%）。"
             + (
-                f"其中 {len(critical)} 人身处关键岗位，一旦流失将直接影响业务连续性，"
-                f"建议立即启动保留方案并确认继任人选。"
+                f"其中 {len(critical)} 人为管理序列或高职级骨干，一旦流失将直接影响"
+                f"团队稳定性与业务连续性，建议立即启动保留方案。"
                 if critical
                 else ""
             )
         ),
     }
+
+
+def _is_critical_role(job_level: str | None) -> bool:
+    """管理序列（M1+）与高职级（P7+）视为关键人群。"""
+    if not job_level:
+        return False
+    level = job_level.upper().strip()
+    if level.startswith("M"):
+        return True
+    if level.startswith("P") and level[1:].isdigit():
+        return int(level[1:]) >= 7
+    return False
 
 
 def _factor_label(field: str) -> str:
@@ -297,39 +306,8 @@ def _factor_label(field: str) -> str:
     }.get(field, field)
 
 
-def succession_coverage_link(db: Session, period: str | None = None) -> dict:
-    """把规划域与继任域连起来：高风险在岗 + 无继任覆盖 = 最高优先级。"""
-    from app.services import succession_service
-
-    succession = succession_service.build_succession_map(db)
-    covered_ids = set()
-    for pos in succession.get("positions", []):
-        if pos.get("candidates"):
-            covered_ids.add(pos.get("incumbent_id"))
-
-    scan = attrition_risk_scan(db, only_high=True)
-    uncovered = [p for p in scan["people"] if p["id"] not in covered_ids]
-
-    return {
-        "period": period or "-",
-        "high_risk_total": scan["high_risk_count"],
-        "uncovered_high_risk": len(uncovered),
-        "uncovered_people": uncovered[:10],
-        "conclusion": (
-            f"高风险人员 {scan['high_risk_count']} 人中，"
-            f"{len(uncovered)} 人所在岗位没有继任候选人。"
-            + (
-                "这类组合一旦发生离职将出现真空，需立即指定接班人或启动外部储备。"
-                if uncovered
-                else "高风险岗位均已配置继任人选。"
-            )
-        ),
-    }
-
-
 __all__ = [
     "attrition_risk_scan",
     "headcount_review",
-    "succession_coverage_link",
     "supply_demand_forecast",
 ]

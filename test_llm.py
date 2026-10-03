@@ -19,7 +19,7 @@ def main():
         print("  3. 确认服务地址 http://127.0.0.1:11434 可访问")
         return
 
-    answer = client.invoke("你是人才发展助手。", "用一句话说明什么是人才盘点九宫格。")
+    answer = client.invoke("你是组织发展与人才发展助手。", "用一句话说明组织发展与人才发展的区别。")
     print("\n模型返回：")
     print(answer)
 

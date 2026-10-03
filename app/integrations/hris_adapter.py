@@ -3,7 +3,9 @@
 所有第三方 HRIS（SAP SuccessFactors、Workday、北森、SAP HR 等）都通过本接口
 暴露能力，业务层不直接依赖任何具体厂商的字段。
 
-能力按 HRIS 六大模块组织：
+能力按核心双域 + HRIS 六大支撑模块组织：
+    organization_development  组织发展
+    talent_development        人才发展
     recruitment        招聘管理
     compensation       薪酬与福利
     performance        绩效管理
@@ -121,8 +123,13 @@ class SyncResult:
 
 
 class HRISCapability:
-    """六大能力域常量。命名与业务模块 key 保持一致。"""
+    """能力域常量：核心双域 + 六大 HRIS 支撑模块，命名与业务模块 key 保持一致。"""
 
+    # 核心双域
+    ORG_DEV = "organization_development"
+    TALENT_DEV = "talent_development"
+
+    # 六大 HRIS 支撑模块
     RECRUITMENT = "recruitment"
     COMPENSATION = "compensation"
     PERFORMANCE = "performance"
@@ -130,7 +137,11 @@ class HRISCapability:
     LEARNING = "learning"
     WORKFORCE = "workforce"
 
+    CORE: tuple[str, ...] = (ORG_DEV, TALENT_DEV)
+
     ALL: tuple[str, ...] = (
+        ORG_DEV,
+        TALENT_DEV,
         RECRUITMENT,
         COMPENSATION,
         PERFORMANCE,
@@ -140,6 +151,8 @@ class HRISCapability:
     )
 
     LABELS: dict[str, str] = {
+        ORG_DEV: "组织发展",
+        TALENT_DEV: "人才发展",
         RECRUITMENT: "招聘管理",
         COMPENSATION: "薪酬与福利",
         PERFORMANCE: "绩效管理",

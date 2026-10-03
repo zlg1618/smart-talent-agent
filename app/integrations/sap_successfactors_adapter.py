@@ -19,7 +19,9 @@
            SAP_SF_PASSWORD=...
     4. 在企业网络打通到 https://{tenant}.api.successfactors.com 的访问。
 
-六模块对应的常见 OData v2 实体：
+核心双域与六模块对应的常见 OData v2 实体：
+    组织发展        Position / PositionMatrixRelationship / Department / FOPosition
+    人才发展        TalentPool / Succession / DevelopmentGoal / CareerDevelopment
     招聘管理        JobRequisition / JobApplication / CandidateProfile / JobOffer
     薪酬与福利      EmpCompensation / CompensationInfo / EmployeeBenefits
     绩效管理        PerformanceReview / Goal / CalibrationSession
@@ -58,6 +60,8 @@ from app.integrations.hris_adapter import (
 # 字段命名是各模块的常见默认集合，实际租户可能因版本与配置不同而有出入，
 # 接入沙箱时建议先用下面的 entity 名跑一次 $metadata 校验。
 SF_ENTITY_MAP: dict[str, str] = {
+    "organization_development": "Position",
+    "talent_development": "TalentPool",
     "recruitment": "JobApplication",
     "compensation": "EmpCompensation",
     "performance": "PerformanceReview",
@@ -73,6 +77,10 @@ class SAPSuccessFactorsAdapter(HRISAdapter):
     # Employee Central 主数据与时间管理是最容易开通的两块；
     # 其余模块依赖对应 SF 模块是否已启用，故默认不全开。
     capabilities = (
+        # 核心双域：Employee Central 提供组织架构与编制，
+        # Succession & Development 提供任职资格与人才池
+        HRISCapability.ORG_DEV,
+        HRISCapability.TALENT_DEV,
         HRISCapability.RECRUITMENT,
         HRISCapability.COMPENSATION,
         HRISCapability.PERFORMANCE,

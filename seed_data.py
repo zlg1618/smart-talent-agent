@@ -1,7 +1,8 @@
 """种子数据生成。
 
-生成一套可演示的模拟人才数据：员工、绩效、潜力、能力模型、
-关键岗位、继任关系、学习资源、部门诊断指标。
+生成一套可演示的模拟人才数据：员工、绩效、潜力、能力模型，
+以及组织发展（组织单元、组织效能、职级体系、变革方案）与
+人才发展（任职资格、人才池、发展项目、导师带教）两类核心域数据。
 
 用法：
     python seed_data.py            # 重建全部数据
@@ -25,28 +26,31 @@ from app.models import (
     Candidate,
     CandidateSkill,
     Competency,
-    Course,
-    DepartmentMetric,
+    DevelopmentProgram,
     Employee,
     EmployeeBenefit,
     EmployeeCompensation,
     EmployeeCompetency,
     EngagementSurvey,
     HeadcountPlan,
-    IDP,
     ImprovementPlan,
     InterviewSchedule,
+    JobArchitecture,
     JobPost,
-    KeyPosition,
     LeaveRequest,
+    Mentorship,
     OfferRecord,
+    OrgChange,
+    OrgEffectiveness,
+    OrgUnit,
     PerformanceGoal,
     PerformanceRecord,
     PerformanceReview,
     PotentialAssessment,
     RelationCase,
     SalaryBand,
-    SuccessionPlan,
+    TalentPool,
+    TalentStandard,
     TrainingCourse,
     TrainingEnrollment,
     WorkforceForecast,
@@ -118,18 +122,40 @@ COMPETENCIES = [
     ("沟通表达", "通用"),
 ]
 
-COURSE_FORMS = ["项目", "导师", "线上", "线下"]
+# 各职级的薪酬带宽（元/月），用于岗位职级体系演示
+LEVEL_BANDS = {
+    "P4": (12000, 16000, 22000),
+    "P5": (16000, 22000, 30000),
+    "P6": (22000, 30000, 42000),
+    "P7": (30000, 40000, 55000),
+    "P8": (40000, 55000, 75000),
+    "M1": (35000, 48000, 65000),
+    "M2": (50000, 68000, 92000),
+    "M3": (70000, 95000, 130000),
+}
 
-READINESS = ["ready_now", "ready_1y", "ready_2y", "not_ready"]
+# 任职资格四维度及其权重
+STANDARD_DIMENSIONS = ["专业能力", "业务贡献", "领导力", "学习敏锐"]
 
-# 部门诊断指标：刻意制造健康 / 关注 / 预警三种状态，便于演示
-DEPARTMENT_METRICS = [
-    ("技术中心", 22, 3.8, 0.08, 3.72, 0.18, 8.5, 2),
-    ("产品部", 12, 2.6, 0.13, 3.35, 0.12, 6.0, -1),
-    ("销售部", 16, 1.4, 0.26, 2.92, 0.07, 12.0, -6),
-    ("人力资源部", 9, 4.2, 0.06, 3.68, 0.16, 4.5, 1),
-    ("财务部", 8, 1.2, 0.09, 3.41, 0.11, 2.5, 0),
-]
+DIMENSION_WEIGHT = {
+    "专业能力": 0.35,
+    "业务贡献": 0.30,
+    "领导力": 0.20,
+    "学习敏锐": 0.15,
+}
+
+# 各职级达标线（1-5 分制）
+LEVEL_PASS_SCORE = {
+    "P4": 3.0, "P5": 3.2, "P6": 3.4, "P7": 3.6,
+    "P8": 3.8, "M1": 3.6, "M2": 3.8, "M3": 4.0,
+}
+
+DIMENSION_REQUIREMENT = {
+    "专业能力": "能独立承担本专业领域的完整任务并输出可复用的方法",
+    "业务贡献": "在考核周期内交付可量化的业务结果并被业务方认可",
+    "领导力": "能带领小组完成任务并进行目标分解与过程辅导",
+    "学习敏锐": "面对新领域可在短期内完成学习并转化为产出",
+}
 
 
 def _unique_names(count: int) -> list[str]:
@@ -162,6 +188,16 @@ def _hire_date() -> date:
 
 def clear_all(db):
     for table in (
+        # 核心双域：人才发展
+        Mentorship,
+        DevelopmentProgram,
+        TalentPool,
+        TalentStandard,
+        # 核心双域：组织发展
+        OrgChange,
+        JobArchitecture,
+        OrgEffectiveness,
+        OrgUnit,
         # 人力资源规划
         AttritionRisk,
         WorkforceForecast,
@@ -192,16 +228,11 @@ def clear_all(db):
         Candidate,
         JobPost,
         # 人才管理与组织发展
-        IDP,
-        SuccessionPlan,
-        KeyPosition,
-        EmployeeCompetency,
-        Course,
-        Competency,
+                    EmployeeCompetency,
+            Competency,
         PotentialAssessment,
         PerformanceRecord,
-        DepartmentMetric,
-        Employee,
+            Employee,
     ):
         db.execute(delete(table))
     db.commit()
@@ -219,20 +250,6 @@ def seed(db):
     competencies = {
         c.name: c for c in db.execute(select(Competency)).scalars().all()
     }
-
-    # ---------- 学习资源 ----------
-    for comp_name, comp in competencies.items():
-        for form in COURSE_FORMS:
-            target = random.randint(3, 5)
-            db.add(
-                Course(
-                    name=f"{comp_name}·{form}提升（{target} 级）",
-                    competency_id=comp.id,
-                    target_level=target,
-                    duration_hours={"项目": 40, "导师": 12, "线上": 8, "线下": 16}[form],
-                    form=form,
-                )
-            )
 
     # ---------- 员工 ----------
     employees: list[Employee] = []
@@ -302,93 +319,210 @@ def seed(db):
             )
     db.flush()
 
-    # ---------- 关键岗位 ----------
-    key_position_defs = [
-        ("技术总监", "技术中心", "M3", "高"),
-        ("架构师", "技术中心", "P8", "高"),
-        ("技术经理", "技术中心", "M1", "中"),
-        ("产品总监", "产品部", "M2", "高"),
-        ("高级产品经理", "产品部", "P7", "中"),
-        ("销售总监", "销售部", "M2", "高"),
-        ("区域经理", "销售部", "M1", "中"),
-        ("HR 总监", "人力资源部", "M2", "高"),
-        ("组织发展经理", "人力资源部", "P6", "中"),
-        ("财务总监", "财务部", "M1", "高"),
-        ("财务经理", "财务部", "P6", "低"),
-    ]
-
-    positions = []
-    for title, dept, level, criticality in key_position_defs:
-        candidates = [e for e in employees if e.department == dept]
-        incumbent = random.choice(candidates) if candidates else None
-        pos = KeyPosition(
-            title=title,
-            department=dept,
-            job_level=level,
-            incumbent_id=incumbent.id if incumbent else None,
-            criticality=criticality,
+    # ---------- 组织发展：组织单元 ----------
+    db.add(
+        OrgUnit(
+            name="公司总部",
+            department="公司总部",
+            parent_name=None,
+            level=1,
+            unit_type="公司",
+            manager_name="CEO",
+            planned_headcount=total,
+            actual_headcount=total,
+            period="2025H1",
         )
-        db.add(pos)
-        positions.append((pos, dept))
-    db.flush()
-
-    # ---------- 继任关系 ----------
-    # 刻意让两个岗位没有候选人，制造继任风险
-    no_successor_idx = {2, 10}
-    for i, (pos, dept) in enumerate(positions):
-        if i in no_successor_idx:
-            continue
-        pool = [e for e in employees if e.department == dept and e.id != pos.incumbent_id]
-        if not pool:
-            continue
-        count = random.choice([1, 2, 2, 3])
-        chosen = random.sample(pool, min(count, len(pool)))
-        for emp in chosen:
+    )
+    for dept, cfg in DEPARTMENTS.items():
+        children_planned = 0
+        for suffix in ("一组", "二组"):
+            actual = (
+                cfg["headcount"] // 2
+                if suffix == "一组"
+                else cfg["headcount"] - cfg["headcount"] // 2
+            )
+            planned = actual + random.choice([0, 0, 1, 2])
+            children_planned += planned
             db.add(
-                SuccessionPlan(
-                    key_position_id=pos.id,
-                    successor_id=emp.id,
-                    readiness=random.choice(READINESS),
-                    note=None,
+                OrgUnit(
+                    name=f"{dept}{suffix}",
+                    department=dept,
+                    parent_name=dept,
+                    level=3,
+                    unit_type="团队",
+                    manager_name=f"{dept}{suffix}负责人",
+                    planned_headcount=planned,
+                    actual_headcount=actual,
+                    period="2025H1",
                 )
             )
-
-    # ---------- 部门诊断指标 ----------
-    for dept, headcount, tenure, turnover, perf, hp, span, change in DEPARTMENT_METRICS:
         db.add(
-            DepartmentMetric(
+            OrgUnit(
+                name=dept,
+                department=dept,
+                parent_name="公司总部",
+                level=2,
+                unit_type="部门",
+                manager_name=f"{dept}负责人",
+                planned_headcount=children_planned,
+                actual_headcount=cfg["headcount"],
+                period="2025H1",
+            )
+        )
+
+    # ---------- 组织发展：组织效能 ----------
+    for dept, cfg in DEPARTMENTS.items():
+        headcount = cfg["headcount"]
+        revenue = round(headcount * random.uniform(55, 145), 1)
+        labor_cost = round(revenue * random.uniform(0.32, 0.78), 1)
+        db.add(
+            OrgEffectiveness(
                 department=dept,
                 period="2025H1",
                 headcount=headcount,
-                avg_tenure=tenure,
-                turnover_rate=turnover,
-                avg_performance=perf,
-                high_potential_ratio=hp,
-                span_of_control=span,
-                headcount_change=change,
+                revenue=revenue,
+                labor_cost=labor_cost,
+                attrition_rate=round(random.uniform(0.04, 0.26), 3),
+                span_of_control=round(random.uniform(3.0, 16.0), 1),
             )
         )
 
-    # ---------- 示例 IDP ----------
-    sample = employees[:5]
-    goals = [
-        "一年内向技术经理角色过渡",
-        "补齐数据分析能力，支撑业务决策",
-        "提升跨部门协作效率，主导重点项目",
-        "强化团队领导能力，储备管理通道",
-        "深化专业纵深，走专家序列",
+    # ---------- 组织发展：岗位职级体系 ----------
+    level_count: dict[tuple[str, str], int] = {}
+    for emp in employees:
+        key = (emp.department, emp.job_level)
+        level_count[key] = level_count.get(key, 0) + 1
+    for dept, cfg in DEPARTMENTS.items():
+        for level in cfg["levels"]:
+            band = LEVEL_BANDS.get(level, (15000, 20000, 28000))
+            db.add(
+                JobArchitecture(
+                    department=dept,
+                    job_family=cfg["family"],
+                    job_level=level,
+                    headcount=level_count.get((dept, level), 0),
+                    target_ratio=round(random.uniform(0.08, 0.32), 3),
+                    avg_tenure=round(random.uniform(0.8, 5.5), 1),
+                    promotion_rate=round(random.uniform(0.03, 0.18), 3),
+                    salary_min=band[0],
+                    salary_mid=band[1],
+                    salary_max=band[2],
+                )
+            )
+
+    # ---------- 组织发展：组织变革方案 ----------
+    change_defs = [
+        ("技术中心平台与业务线拆分", "技术中心", "拆分", "技术中心", "平台组/业务组", 18, 96.0, "待审批"),
+        ("产品部与设计中心合并", "产品部", "合并", "设计中心", "产品部", 12, -38.0, "进行中"),
+        ("销售部区域扩编", "销售部", "扩编", "-", "销售部二组", 24, 260.0, "进行中"),
+        ("财务部共享中心新设", "财务部", "新设", "-", "财务共享中心", 8, 74.0, "待审批"),
+        ("人力资源部三支柱调整", "人力资源部", "调整", "人力资源部", "HRBP/COE/SSC", 9, 12.0, "已完成"),
+        ("技术中心测试团队缩编", "技术中心", "缩编", "测试组", "-", 6, -55.0, "待审批"),
     ]
-    for emp, goal in zip(sample, goals):
-        comp = random.choice(list(competencies.values()))
+    for name, dept, ctype, src, tgt, affected, cost, status in change_defs:
         db.add(
-            IDP(
-                employee_id=emp.id,
-                period="2025H1",
-                goal=goal,
-                competency_id=comp.id,
-                action_type=random.choice(["项目", "导师", "培训", "轮岗"]),
-                action_name=f"{comp.name}专项提升",
-                status="进行中",
+            OrgChange(
+                name=name,
+                department=dept,
+                change_type=ctype,
+                source_unit=src,
+                target_unit=tgt,
+                affected_headcount=affected,
+                cost_impact=cost,
+                status=status,
+                target_date=date(2025, random.choice([7, 8, 9, 10]), random.randint(1, 28)),
+                note=f"{ctype}方案，影响 {affected} 人，成本影响 {cost} 万元/年",
+            )
+        )
+
+    # ---------- 人才发展：任职资格标准 ----------
+    for family in sorted({cfg["family"] for cfg in DEPARTMENTS.values()}):
+        for level, pass_score in LEVEL_PASS_SCORE.items():
+            for dim in STANDARD_DIMENSIONS:
+                db.add(
+                    TalentStandard(
+                        job_family=family,
+                        job_level=level,
+                        dimension=dim,
+                        requirement=DIMENSION_REQUIREMENT[dim],
+                        weight=DIMENSION_WEIGHT[dim],
+                        pass_score=pass_score,
+                    )
+                )
+
+    # ---------- 人才发展：人才池 ----------
+    pool_defs = [
+        ("高潜人才池", "高潜", ["跨部门", "国际化", "复合背景"], 8),
+        ("管理后备池", "后备", ["管理意愿", "带教经验"], 7),
+        ("技术专家池", "专家", ["技术纵深", "架构能力"], 6),
+    ]
+    picked_ids: set[int] = set()
+    for pool_name, pool_type, tags, size in pool_defs:
+        candidates = [e for e in employees if e.id not in picked_ids]
+        if len(candidates) < size:
+            candidates = employees
+        for emp in random.sample(candidates, min(size, len(candidates))):
+            picked_ids.add(emp.id)
+            db.add(
+                TalentPool(
+                    pool_name=pool_name,
+                    pool_type=pool_type,
+                    employee_id=emp.id,
+                    stage=random.choices(["在池", "观察", "已出池"], weights=[7, 2, 1])[0],
+                    tag=random.choice(tags),
+                    score=round(random.uniform(62, 96), 1),
+                    entered_at=date(2025, 1, 1),
+                )
+            )
+
+    # ---------- 人才发展：发展项目 ----------
+    program_defs = [
+        ("青苗计划·应届生培养", "培养项目", "入职 1 年内员工", 30, 28, 24, 4.3, 18.0),
+        ("扬帆计划·高潜训练营", "训练营", "高潜人才池成员", 20, 20, 19, 4.6, 32.0),
+        ("领航计划·新任经理转身", "培养项目", "近一年晋升管理者", 12, 11, 8, 4.1, 24.0),
+        ("业务突破行动学习", "行动学习", "跨部门骨干", 16, 14, 9, 3.9, 20.0),
+        ("技术专家轮岗计划", "轮岗", "技术专家池成员", 10, 6, 4, 3.6, 12.0),
+    ]
+    for name, ptype, audience, capacity, enrolled, completed, sat, budget in program_defs:
+        db.add(
+            DevelopmentProgram(
+                name=name,
+                program_type=ptype,
+                audience=audience,
+                capacity=capacity,
+                enrolled=enrolled,
+                completed=completed,
+                satisfaction=sat,
+                budget=budget,
+                start_date=date(2025, 3, 1),
+                end_date=date(2025, random.choice([9, 10, 11, 12]), 28),
+            )
+        )
+
+    # ---------- 人才发展：导师带教 ----------
+    mentors = [
+        e for e in employees
+        if e.job_level.startswith("M") or e.job_level in ("P7", "P8")
+    ]
+    mentees = [e for e in employees if e.job_level in ("P4", "P5", "P6")]
+    topics = [
+        "技术纵深与架构思维", "从专业到管理的转身", "跨部门协作与影响力",
+        "业务理解与商业敏感", "目标管理与过程辅导", "职业规划与能力补齐",
+    ]
+    for _ in range(14):
+        if not mentors or not mentees:
+            break
+        planned = random.choice([4, 6, 8])
+        done = random.randint(0, planned)
+        db.add(
+            Mentorship(
+                mentor_id=random.choice(mentors).id,
+                mentee_id=random.choice(mentees).id,
+                topic=random.choice(topics),
+                session_count=done,
+                planned_sessions=planned,
+                status="已完成" if done >= planned else "进行中",
+                start_date=date(2025, 2, 1),
             )
         )
 
@@ -1051,7 +1185,10 @@ def seed(db):
     return {
         "employees": len(employees),
         "competencies": len(competencies),
-        "key_positions": len(positions),
+        "org_units": len(DEPARTMENTS) * 3 + 1,
+        "talent_pools": 3,
+        "development_programs": 5,
+        "mentorship_pairs": 14,
         "periods": PERIODS,
         "hris": {
             "recruitment": {

@@ -1,15 +1,19 @@
 from app.tools import (
     compensation_tool,
-    diagnosis_tool,
     employee_relations_tool,
-    idp_tool,
     learning_tool,
+    organization_tool,
     performance_tool,
     recruitment_tool,
-    succession_tool,
-    talent_review_tool,
+    talent_development_tool,
     workforce_tool,
 )
+
+# 核心双域 → Tool 映射
+CORE_TOOL_MAP: dict[str, object] = {
+    "organization_development": organization_tool,
+    "talent_development": talent_development_tool,
+}
 
 # HRIS 六大模块 → Tool 映射
 HRIS_TOOL_MAP: dict[str, object] = {
@@ -22,15 +26,14 @@ HRIS_TOOL_MAP: dict[str, object] = {
 }
 
 __all__ = [
+    "CORE_TOOL_MAP",
     "HRIS_TOOL_MAP",
     "compensation_tool",
-    "diagnosis_tool",
     "employee_relations_tool",
-    "idp_tool",
     "learning_tool",
+    "organization_tool",
     "performance_tool",
     "recruitment_tool",
-    "succession_tool",
-    "talent_review_tool",
+    "talent_development_tool",
     "workforce_tool",
 ]

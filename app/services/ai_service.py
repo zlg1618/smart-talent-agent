@@ -22,6 +22,7 @@ class AIService:
             "message": message,
             "request_type": state.get("request_type"),
             "active_topic": state.get("active_topic"),
+            "core_module": state.get("core_module"),
             "hris_module": state.get("hris_module"),
             "conditions": {
                 "department": state.get("department"),
@@ -29,14 +30,14 @@ class AIService:
                 "job_level": state.get("job_level"),
                 "employee_name": state.get("employee_name"),
             },
-            "preferences": state.get("preferences") or {},
+            "result_topic": state.get("result_topic"),
             "result": state.get("result"),
             "answer": state.get("answer"),
             "llm_used": bool(state.get("llm_used")),
         }
 
     def get_state(self, thread_id: str) -> dict[str, Any]:
-        """查看某个会话当前记忆的盘点条件。"""
+        """查看某个会话当前记忆的查询条件。"""
         config = {"configurable": {"thread_id": thread_id}}
         snapshot = self.graph.get_state(config)
         values = snapshot.values if snapshot else {}
@@ -48,8 +49,8 @@ class AIService:
                 "job_level": values.get("job_level"),
                 "employee_name": values.get("employee_name"),
             },
-            "preferences": values.get("preferences") or {},
             "active_topic": values.get("active_topic"),
+            "core_module": values.get("core_module"),
             "hris_module": values.get("hris_module"),
         }
 
@@ -63,7 +64,6 @@ class AIService:
                 "period": None,
                 "job_level": None,
                 "employee_name": None,
-                "preferences": {},
                 "active_topic": None,
                 "result": None,
                 "answer": None,

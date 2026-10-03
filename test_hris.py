@@ -6,7 +6,7 @@
     绩效管理       目标达成、评价偏差、强制分布、改进计划
     员工关系管理   假期余额、考勤、关系事件、敬业度
     培训与开发     培训总览、必修合规、课程推荐、培训效果
-    人力资源规划   编制审查、供需预测、离职风险、继任联动
+    人力资源规划   编制审查、供需预测、离职风险
 
 运行：python test_hris.py
 """
@@ -119,8 +119,6 @@ def main():
              ("total_net_demand", "total_internal_supply", "total_external_hire"))
         show("离职风险", workforce_service.attrition_risk_scan(db),
              ("scanned_count", "high_risk_count", "medium_risk_count"))
-        show("继任联动", workforce_service.succession_coverage_link(db),
-             ("high_risk_total", "uncovered_high_risk"))
     finally:
         db.close()
     print(f"\n{SEPARATOR}")

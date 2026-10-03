@@ -6,14 +6,11 @@ from fastapi import FastAPI
 
 from app.api import (
     ai,
-    diagnosis,
+    core,
     employee,
     health,
     hris,
-    idp,
     integrations,
-    succession,
-    talent_review,
 )
 from app.config.database import init_db
 from app.config.settings import get_settings
@@ -29,11 +26,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Smart Talent Agent",
     description=(
-        "智能组织发展与人才盘点 Agent，"
-        "并集成 HRIS 六大模块：招聘、薪酬与福利、绩效管理、"
+        "以组织发展与人才发展为双核心的智能 HR Agent，"
+        "并集成 HRIS 六大支撑模块：招聘管理、薪酬与福利、绩效管理、"
         "员工关系管理、培训与开发、人力资源规划"
     ),
-    version="2.0.0",
+    version="3.0.0",
     lifespan=lifespan,
 )
 
@@ -41,11 +38,8 @@ app = FastAPI(
 app.include_router(health.router)
 app.include_router(ai.router)
 app.include_router(employee.router)
-# 人才管理与组织发展
-app.include_router(talent_review.router)
-app.include_router(succession.router)
-app.include_router(idp.router)
-app.include_router(diagnosis.router)
+# 核心双域：组织发展 + 人才发展
+app.include_router(core.router)
 # HRIS 六大模块 + 外部系统接入
 app.include_router(hris.router)
 app.include_router(integrations.router)
@@ -60,7 +54,10 @@ def root():
         "database": settings.database_url.split("://")[0],
         "llm_provider": settings.llm_provider,
         "modules": {
-            "talent": ["/api/talent", "/api/succession", "/api/idp", "/api/diagnosis"],
+            "core": [
+                "/api/core/organization-development",
+                "/api/core/talent-development",
+            ],
             "hris": ["/api/hris/recruitment", "/api/hris/compensation",
                      "/api/hris/performance", "/api/hris/employee-relations",
                      "/api/hris/learning", "/api/hris/workforce"],

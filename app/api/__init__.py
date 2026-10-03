@@ -1,19 +1,17 @@
 from app.api import (
     ai,
-    diagnosis,
+    core,
     employee,
     health,
-    idp,
-    succession,
-    talent_review,
+    hris,
+    integrations,
 )
 
 __all__ = [
     "ai",
-    "diagnosis",
+    "core",
     "employee",
     "health",
-    "idp",
-    "succession",
-    "talent_review",
+    "hris",
+    "integrations",
 ]

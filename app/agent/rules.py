@@ -12,19 +12,43 @@ from sqlalchemy.orm import Session
 
 from app.models import Employee, PerformanceRecord
 
-INTENT_KEYWORDS = [
-    ("DIAGNOSIS", ["组织诊断", "组织健康", "健康度", "诊断", "离职率", "组织问题"]),
-    ("SUCCESSION", ["继任", "接班", "梯队", "后备", "关键岗位", "继任地图"]),
-    ("IDP", ["发展计划", "IDP", "idp", "培养", "发展方案", "提升计划", "学习路径"]),
+# 核心双域 → 意图
+CORE_MODULE_INTENT = {
+    "organization_development": "ORG_DEV",
+    "talent_development": "TALENT_DEV",
+}
+
+# 核心双域的关键词路由表。
+# 顺序即优先级：组织发展在前，避免"组织变革"被归入人力资源规划。
+CORE_MODULE_KEYWORDS = [
     (
-        "TALENT_REVIEW",
-        ["盘点", "九宫格", "人才地图", "绩效潜力", "人才分布", "明星人才", "高潜"],
+        "organization_development",
+        [
+            "组织架构", "组织单元", "组织效能", "组织变革", "组织调整", "重组",
+            "人效", "人均产出", "人工成本", "成本率", "职级体系", "职族",
+            "晋升率", "晋升通道", "管理幅度", "汇报线", "层级", "金字塔",
+            "合并", "拆分", "分拆", "扩编", "缩编", "新设",
+        ],
     ),
+    (
+        "talent_development",
+        [
+            "人才发展", "能力差距", "能力画像", "能力模型", "任职资格", "人才标准",
+            "匹配度", "够不够格", "人才池", "高潜", "后备池", "专家池",
+            "晋升", "下一职级", "晋升评审", "能否胜任", "任职达标",
+            "发展项目", "培养项目", "行动学习", "训练营", "轮岗",
+            "导师", "带教", "师徒",
+        ],
+    ),
+]
+
+INTENT_KEYWORDS = [
+    ("ORG_DEV", ["组织发展", "架构", "效能"]),
+    ("TALENT_DEV", ["人才发展", "发展计划", "培养", "提升计划"]),
     ("HRIS", ["HRIS", "人力资源", "人事", "HR 系统"]),
 ]
 
 UPDATE_KEYWORDS = ["改成", "改为", "修改为", "换成", "切换", "改成 ", "更新为", "改成"]
-PREFERENCE_KEYWORDS = ["只看", "只要", "仅仅看", "排除", "不考虑", "不包括", "剔除"]
 
 # HRIS 六大子模块的关键词路由表。
 # 顺序即优先级：越具体的短语排越前，避免"招聘开会"被归入员工关系。
@@ -54,8 +78,8 @@ HRIS_MODULE_KEYWORDS = [
     (
         "learning",
         [
-            "培训", "课程", "课", "必修", "学习", "学时", "报名", "讲师", "赋能",
-            "能力差距", "培训计划", "训练营", "补训", "上课",
+            "培训", "课程", "必修", "学时", "报名", "讲师", "赋能",
+            "能力差距", "培训计划", "补训", "上课",
         ],
     ),
     (
@@ -69,10 +93,20 @@ HRIS_MODULE_KEYWORDS = [
         "workforce",
         [
             "编制", "人力规划", "供需", "预测", "离职风险", "人力缺口", "headcount",
-            "招聘规划", "人才盘点需求", "扩编",
+            "招聘规划",
         ],
     ),
 ]
+
+
+def rule_core_module(message: str) -> str | None:
+    """在核心双域内决定进入组织发展还是人才发展，命中不了返回 None。"""
+    text = message or ""
+    for module, keywords in CORE_MODULE_KEYWORDS:
+        for k in keywords:
+            if k in text:
+                return module
+    return None
 
 
 def rule_hris_module(message: str) -> str | None:
@@ -88,24 +122,23 @@ def rule_hris_module(message: str) -> str | None:
 def rule_intent(message: str) -> str:
     text = message or ""
 
-    # 优先级：修改条件 > 筛选偏好 > 业务意图。
-    # 偏好必须早于业务关键词判断，否则"只看明星人才"会被误判成重新盘点。
+    # 优先级：修改条件 > 业务意图。
+    # 短句里同时出现修改词与业务词时，更像是在改条件。
     has_update = any(k in text for k in UPDATE_KEYWORDS)
     has_business = any(
         k in text for keywords in dict(INTENT_KEYWORDS).values() for k in keywords
     )
+    has_core = rule_core_module(text) is not None
     has_hris = rule_hris_module(text) is not None
 
-    if has_update and (has_business or has_hris):
-        # 同时含修改词与业务词时按长度判断：短句更像改条件
-        if len(text) <= 20:
-            return "UPDATE"
-    if has_update and not (has_business or has_hris):
+    if has_update and not (has_business or has_core or has_hris):
         return "UPDATE"
-    if any(k in text for k in PREFERENCE_KEYWORDS):
-        return "PREFERENCE"
+    if has_update and (has_business or has_core or has_hris) and len(text) <= 20:
+        return "UPDATE"
 
-    # HRIS 六大模块的关键词优先于盘点类，否则"招聘"会被误判为人才盘点
+    # 核心双域优先于 HRIS，保证"组织发展""人才发展"这类主打能力优先命中
+    if has_core:
+        return CORE_MODULE_INTENT[rule_core_module(text)]
     if has_hris:
         return "HRIS"
 
@@ -162,29 +195,3 @@ def latest_period(db: Session) -> str | None:
         .order_by(desc(PerformanceRecord.period))
     )
     return db.execute(stmt).scalars().first()
-
-
-def rule_preference(message: str) -> dict:
-    text = message or ""
-    result: dict = {"only_grid": None, "criticality": None, "exclude_readiness": None}
-
-    if "明星" in text or "高绩效高潜" in text:
-        result["only_grid"] = ["高-高"]
-    elif "高潜" in text and ("只看" in text or "只要" in text):
-        result["only_grid"] = ["高-高", "中-高", "低-高"]
-    elif "待优化" in text or "低效" in text:
-        result["only_grid"] = ["低-低"]
-    elif "待改进" in text:
-        result["only_grid"] = ["低-中", "低-低"]
-
-    if "最高" in text or "最重要" in text or "核心关键" in text:
-        result["criticality"] = "高"
-    elif "中等重要" in text:
-        result["criticality"] = "中"
-
-    if "未就绪" in text or "不成熟" in text:
-        result["exclude_readiness"] = ["not_ready"]
-    elif "两年" in text:
-        result["exclude_readiness"] = ["not_ready", "ready_2y"]
-
-    return result

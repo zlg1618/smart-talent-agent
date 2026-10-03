@@ -5,7 +5,6 @@ from app.models.compensation import (
     EmployeeCompensation,
     SalaryBand,
 )
-from app.models.development import Course, DepartmentMetric, IDP
 from app.models.employee import (
     Competency,
     Employee,
@@ -20,6 +19,12 @@ from app.models.employee_relations import (
     RelationCase,
 )
 from app.models.learning import TrainingCourse, TrainingEnrollment
+from app.models.organization import (
+    JobArchitecture,
+    OrgChange,
+    OrgEffectiveness,
+    OrgUnit,
+)
 from app.models.performance import (
     CalibrationSession,
     ImprovementPlan,
@@ -34,8 +39,29 @@ from app.models.recruitment import (
     JobPost,
     OfferRecord,
 )
-from app.models.talent import KeyPosition, SuccessionPlan
+from app.models.talent_development import (
+    DevelopmentProgram,
+    Mentorship,
+    TalentPool,
+    TalentStandard,
+)
 from app.models.workforce import AttritionRisk, HeadcountPlan, WorkforceForecast
+
+# 核心双域：组织发展 + 人才发展
+CORE_MODULES: dict[str, list[str]] = {
+    "organization_development": [
+        "OrgUnit",
+        "OrgEffectiveness",
+        "JobArchitecture",
+        "OrgChange",
+    ],
+    "talent_development": [
+        "TalentStandard",
+        "TalentPool",
+        "DevelopmentProgram",
+        "Mentorship",
+    ],
+}
 
 # HRIS 六大模块及其模型清单，供 Adapters 与文档按域遍历
 HRIS_MODULES: dict[str, list[str]] = {
@@ -76,8 +102,6 @@ HRIS_MODULES: dict[str, list[str]] = {
         "HeadcountPlan",
         "WorkforceForecast",
         "AttritionRisk",
-        "KeyPosition",
-        "SuccessionPlan",
     ],
 }
 
@@ -91,8 +115,8 @@ __all__ = [
     "Candidate",
     "CandidateSkill",
     "Competency",
-    "Course",
-    "DepartmentMetric",
+    "CORE_MODULES",
+    "DevelopmentProgram",
     "Employee",
     "EmployeeBenefit",
     "EmployeeCompensation",
@@ -100,20 +124,24 @@ __all__ = [
     "EngagementSurvey",
     "HeadcountPlan",
     "HRIS_MODULES",
-    "IDP",
     "ImprovementPlan",
     "InterviewSchedule",
+    "JobArchitecture",
     "JobPost",
-    "KeyPosition",
     "LeaveRequest",
+    "Mentorship",
     "OfferRecord",
+    "OrgChange",
+    "OrgEffectiveness",
+    "OrgUnit",
     "PerformanceGoal",
     "PerformanceRecord",
     "PerformanceReview",
     "PotentialAssessment",
     "RelationCase",
     "SalaryBand",
-    "SuccessionPlan",
+    "TalentPool",
+    "TalentStandard",
     "TimestampMixin",
     "TrainingCourse",
     "TrainingEnrollment",

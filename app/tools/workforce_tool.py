@@ -56,13 +56,8 @@ def run_attrition_risk(
     )
 
 
-def run_succession_coverage_link(db: Session, message: str) -> dict:
-    return workforce_service.succession_coverage_link(db)
-
-
 __all__ = [
     "run_attrition_risk",
     "run_headcount_review",
-    "run_succession_coverage_link",
     "run_supply_demand_forecast",
 ]

@@ -42,17 +42,20 @@ class Settings(BaseSettings):
     llm_fallback_to_rule: bool = True
 
     # ---------------- 业务阈值 ----------------
-    # 九宫格绩效 / 潜力分档阈值
-    talent_score_low: float = 3.0
-    talent_score_high: float = 4.0
+    # 组织发展：管理幅度与组织层级健康区间
+    od_span_min: float = 4.0
+    od_span_max: float = 12.0
+    od_depth_min: int = 3
+    od_depth_max: int = 5
 
-    # 组织诊断阈值
-    diagnosis_turnover_warning: float = 0.10
-    diagnosis_turnover_danger: float = 0.20
-    diagnosis_hp_ratio_warning: float = 0.10
-    diagnosis_span_narrow: float = 3.0
-    diagnosis_span_wide: float = 15.0
-    diagnosis_tenure_short: float = 1.5
+    # 人才发展：任职资格匹配度分档（完全胜任 / 基本胜任 / 尚有差距）
+    td_match_ready: float = 0.90
+    td_match_basic: float = 0.75
+    td_match_gap: float = 0.60
+
+    # 人才发展：发展项目完成率与满意度达标线
+    td_program_completion_target: float = 0.70
+    td_program_satisfaction_target: float = 4.0
 
     # ---------------- 服务 ----------------
     app_host: str = "127.0.0.1"

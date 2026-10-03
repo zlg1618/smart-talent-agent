@@ -45,9 +45,3 @@ def attrition_risk(
     return workforce_tool.run_attrition_risk(
         db, message="高风险" if only_high else "离职风险", department=department
     )
-
-
-@router.get("/succession-link")
-def succession_link(db: Session = Depends(get_db)):
-    """离职风险 × 继任覆盖的交叉分析。"""
-    return workforce_tool.run_succession_coverage_link(db, message="")

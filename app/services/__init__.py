@@ -1,16 +1,20 @@
 from app.services import (
     compensation_service,
-    diagnosis_service,
     employee_relations_service,
     employee_service,
-    idp_service,
     learning_service,
+    organization_service,
     performance_service,
     recruitment_service,
-    succession_service,
-    talent_review_service,
+    talent_development_service,
     workforce_service,
 )
+
+# 核心双域 → 计算服务映射
+CORE_SERVICE_MAP: dict[str, object] = {
+    "organization_development": organization_service,
+    "talent_development": talent_development_service,
+}
 
 # HRIS 六大模块 → 计算服务映射
 HRIS_SERVICE_MAP: dict[str, object] = {
@@ -20,6 +24,12 @@ HRIS_SERVICE_MAP: dict[str, object] = {
     "employee_relations": employee_relations_service,
     "learning": learning_service,
     "workforce": workforce_service,
+}
+
+# 核心双域展示名
+CORE_MODULE_LABELS: dict[str, str] = {
+    "organization_development": "组织发展",
+    "talent_development": "人才发展",
 }
 
 # HRIS 六大模块展示名
@@ -33,17 +43,17 @@ HRIS_MODULE_LABELS: dict[str, str] = {
 }
 
 __all__ = [
+    "CORE_MODULE_LABELS",
+    "CORE_SERVICE_MAP",
     "HRIS_MODULE_LABELS",
     "HRIS_SERVICE_MAP",
     "compensation_service",
-    "diagnosis_service",
     "employee_relations_service",
     "employee_service",
-    "idp_service",
     "learning_service",
+    "organization_service",
     "performance_service",
     "recruitment_service",
-    "succession_service",
-    "talent_review_service",
+    "talent_development_service",
     "workforce_service",
 ]
