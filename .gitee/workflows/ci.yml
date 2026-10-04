@@ -1,0 +1,63 @@
+version: '1.0'
+name: smart-talent-agent-ci
+displayName: Smart Talent Agent CI
+
+triggers:
+  push:
+    branches:
+      include:
+        - master
+        - develop
+  pull_request:
+    branches:
+      include:
+        - master
+
+stages:
+  - name: test
+    displayName: 测试
+    strategy:
+      matrix: {}
+    steps:
+      - step: pythonsetup@1
+        name: pythonsetup
+        displayName: Python 环境
+        inputs:
+          version: '3.11'
+
+      - step: cmdshell@1
+        name: install
+        displayName: 安装依赖
+        inputs:
+          script: |
+            python -m pip install --upgrade pip
+            pip install -r requirements-dev.txt
+
+      - step: cmdshell@1
+        name: pytest
+        displayName: 运行 pytest
+        inputs:
+          script: |
+            python -m pytest -q --junitxml=report.xml
+
+      - step: cmdshell@1
+        name: smoke
+        displayName: 端点与路由冒烟
+        inputs:
+          script: |
+            python -c "from app.config.database import init_db; init_db()"
+            python seed_data.py
+            python smoke_core.py
+
+  - name: build
+    displayName: 镜像构建
+    strategy:
+      matrix: {}
+    trigger: auto
+    steps:
+      - step: cmdshell@1
+        name: dockerbuild
+        displayName: Docker 构建校验
+        inputs:
+          script: |
+            docker build -t smart-talent-agent:ci .

@@ -1,8 +1,21 @@
 # Smart Talent Agent · 组织发展与人才发展智能体
 
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)
+![LangGraph](https://img.shields.io/badge/LangGraph-Agent-orange.svg)
+![Endpoints](https://img.shields.io/badge/API-67-blueviolet.svg)
+
 > 面向组织发展（OD）与人才发展（TD）的完整体系化智能体。
 > OD 管"组织能力"，TD 管"人的能力"。
 > 所有数字由确定性计算引擎产出，每个结论都附计算依据，大模型只负责表达。
+
+**关键词**：`OD 组织发展` `TD 人才发展` `组织诊断` `战略解码` `人才盘点九宫格`
+`胜任力模型` `继任梯队` `IDP` `HRIS` `LangGraph` `FastAPI` `AI Agent`
+
+- 仓库：<https://gitee.com/zlg1618/smart-talent-agent>
+- 许可：MIT
+- 可视化看板：启动服务后访问 <http://127.0.0.1:8000/ui/>
 
 ## 介绍
 
@@ -253,15 +266,53 @@ GET /api/hris/learning/overview           # 培训与开发
 GET /api/hris/workforce/headcount         # 人力资源规划
 ```
 
+### 可视化看板
+
+启动服务后打开 <http://127.0.0.1:8000/ui/>，零外部依赖的纯静态页面：
+
+| 页签 | 内容 |
+| --- | --- |
+| 组织架构与管控 | 组织树 + 编制达成率 + 组织模式/管控模式/集权分权三张分布 |
+| 人效看板 | 部门人均产出、人工成本率、人效指数条形排名 |
+| 职级金字塔 | 各部门基层/中级/高级结构与形态判定 |
+| 发展项目 | 覆盖率、完成率、满意度、人均投入 |
+| 对话问数 | 直接调用 `/api/ai/chat`，显示命中的意图与动作 |
+
+### Docker 启动
+
+```bash
+# 最简：单容器 + SQLite（数据落在 sta-data 卷）
+docker compose up -d app
+# 或者直接用镜像
+docker build -t smart-talent-agent .
+docker run -d -p 8000:8000 -v sta-data:/data smart-talent-agent
+
+# 需要 MySQL / 本地大模型时启用对应 profile
+docker compose --profile mysql --profile llm up -d
+```
+
+`SEED_ON_START=false` 可跳过启动时重建种子数据（接已有库时使用）。
+
 ### 运行测试
 
 ```bash
+# pytest（推荐，CI 用这套）
+pip install -r requirements-dev.txt
+pytest -q                    # 28 个用例：OD 计算 / TD 计算 / API / Agent 路由
+
+# 脚本式（便于演示与逐项查看输出）
 python smoke_core.py     # 端点 + Agent 路由冒烟（34 端点 + 24 场景）
 python test_tool.py      # 核心双域 17 项计算（不依赖大模型）
 python test_hris.py      # HRIS 六模块计算
 python test_agent.py     # Agent 多轮流程
 python test_llm.py       # 大模型连通性
 ```
+
+pytest 使用独立的 SQLite 临时库，不污染开发库；每次运行会先清空再写入种子数据，可重复执行。
+
+### 开源许可
+
+MIT License，详见 [LICENSE](./LICENSE)。
 
 ## 参与贡献
 
@@ -1085,12 +1136,32 @@ smart-talent-agent
 │   │
 │   └── main.py
 │
+├── web                  # 可视化看板（纯静态，无外部依赖）
+│   └── index.html
+│
+├── tests                # pytest 用例
+│   ├── conftest.py              # 临时库夹具 + 种子数据
+│   ├── test_core_od.py          # 组织发展计算
+│   ├── test_core_td.py          # 人才发展计算
+│   ├── test_api.py              # 端点冒烟
+│   └── test_agent_routing.py    # 意图与动作路由
+│
+├── .gitee/workflows     # Gitee Go CI 流水线
+│   └── ci.yml
+│
 ├── seed_data.py
-├── test_agent.py
-├── test_tool.py
-├── test_hris.py
-├── test_llm.py
+├── smoke_core.py        # 端点 + 路由冒烟脚本
+├── test_agent.py        # 脚本式：Agent 多轮流程
+├── test_tool.py         # 脚本式：核心双域 17 项计算
+├── test_hris.py         # 脚本式：HRIS 六模块
+├── test_llm.py          # 脚本式：大模型连通性
 ├── requirements.txt
+├── requirements-dev.txt # 测试与 CI 依赖
+├── pytest.ini
+├── Dockerfile
+├── docker-compose.yml
+├── .dockerignore
+├── LICENSE              # MIT
 ├── env.example
 └── README.md
 ```
@@ -1510,13 +1581,17 @@ SQLite 零配置启动，MySQL 生产可用，仅改一行配置即可切换。
 
 ## 二十八、后续优化方向
 
+**已完成**：前端可视化看板（`/ui/`）、pytest 自动化测试与 Gitee Go CI、
+Docker / docker-compose 容器化、战略解码目标对齐检查、组织诊断历史趋势对比。
+
+**待办**：
+
 1. **持久化 Memory**：生产环境将 `InMemorySaver` 替换为数据库 Checkpointer
-2. **前端可视化**：开发组织架构树、人效看板、职级金字塔与发展项目看板
-3. **RAG 知识库**：接入公司人才政策、任职资格标准、发展通道手册
-4. **多轮追问**：支持"为什么他的匹配度只有 72%"这类可解释追问
-5. **权限与脱敏**：按角色限制可见范围，敏感字段脱敏
-6. **自动化测试**：补充 pytest 与接口自动化测试
-7. **Docker 部署**：容器化 FastAPI、MySQL 与 Ollama
+2. **RAG 知识库**：接入公司人才政策、任职资格标准、发展通道手册
+3. **多轮追问**：支持"为什么他的匹配度只有 72%"这类可解释追问
+4. **权限与脱敏**：按角色限制可见范围，敏感字段脱敏
+5. **看板扩展**：把九宫格、继任地图、战略解码目标树也画进前端
+6. **数据接入**：把种子数据替换为真实 HRIS 同步（Local / SAP SF 适配器已就绪）
 
 * * *
 

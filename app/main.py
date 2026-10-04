@@ -1,8 +1,11 @@
 """FastAPI 入口。"""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api import (
     ai,
@@ -34,6 +37,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# 允许前端看板与第三方页面直接调用本服务
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(health.router)
 app.include_router(ai.router)
@@ -44,6 +55,11 @@ app.include_router(core.router)
 app.include_router(hris.router)
 app.include_router(integrations.router)
 
+# 可视化看板（纯静态页面，无外部依赖）
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+if WEB_DIR.is_dir():
+    app.mount("/ui", StaticFiles(directory=str(WEB_DIR), html=True), name="ui")
+
 
 @app.get("/")
 def root():
@@ -51,6 +67,7 @@ def root():
     return {
         "service": "smart-talent-agent",
         "docs": "/docs",
+        "ui": "/ui/",
         "database": settings.database_url.split("://")[0],
         "llm_provider": settings.llm_provider,
         "modules": {

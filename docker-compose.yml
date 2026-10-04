@@ -1,0 +1,63 @@
+services:
+  # ---------- 应用 ----------
+  app:
+    build: .
+    image: smart-talent-agent:latest
+    container_name: sta-app
+    ports:
+      - "8000:8000"
+    environment:
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      # SQLite（默认，零配置）：数据落在 sta-data 卷
+      DATABASE_URL: sqlite:////data/talent_agent.db
+      # 切 MySQL 时改成下面这一行，并取消 mysql 服务的注释
+      # DATABASE_URL: mysql+pymysql://talent:talent_pass@mysql:3306/talent_ai
+      LLM_PROVIDER: ollama
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: deepseek-r1:7b
+      LLM_FALLBACK_TO_RULE: "true"
+      SEED_ON_START: "true"
+    volumes:
+      - sta-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ---------- MySQL（可选，生产推荐）----------
+  # 启用时把 app 的 DATABASE_URL 切到 MySQL，并给 app 加 depends_on: mysql
+  mysql:
+    image: mysql:8.0
+    container_name: sta-mysql
+    profiles: ["mysql"]
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root_pass
+      MYSQL_DATABASE: talent_ai
+      MYSQL_USER: talent
+      MYSQL_PASSWORD: talent_pass
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - sta-mysql:/var/lib/mysql
+    restart: unless-stopped
+
+  # ---------- 本地大模型（可选）----------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: sta-ollama
+    profiles: ["llm"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - sta-ollama:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  sta-data:
+  sta-mysql:
+  sta-ollama:

@@ -15,3 +15,5 @@ talent_agent.db
 _rebuild_readme.py
 _fix_readme.py
 smoke_out.txt
+patch_result.json
+repo_info.json

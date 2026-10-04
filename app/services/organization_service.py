@@ -455,14 +455,26 @@ def org_diagnosis(
 ) -> dict:
     """组织诊断：健康度调研 + 组织扫描（7S / 6-BOX / 五维框架）。
 
-    输出组织健康分、分维度差距、已识别痛点与瓶颈排序。
+    输出组织健康分、分维度差距、已识别痛点与瓶颈排序，
+    并与上一个周期做历史趋势对比。
     """
     # ---------- 1. 组织健康度调研 ----------
-    stmt = select(OrgHealthSurvey)
+    base_stmt = select(OrgHealthSurvey)
     if department:
-        stmt = stmt.where(OrgHealthSurvey.department == department)
-    if period:
-        stmt = stmt.where(OrgHealthSurvey.period == period)
+        base_stmt = base_stmt.where(OrgHealthSurvey.department == department)
+
+    all_periods = sorted(
+        {
+            p
+            for p in db.execute(select(OrgHealthSurvey.period)).scalars().all()
+            if p
+        }
+    )
+    # 未指定周期时取最新周期，避免把不同周期的数据混在一起平均
+    target_period = period or (all_periods[-1] if all_periods else None)
+    stmt = base_stmt
+    if target_period:
+        stmt = stmt.where(OrgHealthSurvey.period == target_period)
     surveys = list(db.execute(stmt).scalars().all())
 
     health_rows = []
@@ -502,8 +514,8 @@ def org_diagnosis(
     scan_stmt = select(OrgScan)
     if department:
         scan_stmt = scan_stmt.where(OrgScan.department == department)
-    if period:
-        scan_stmt = scan_stmt.where(OrgScan.period == period)
+    if target_period:
+        scan_stmt = scan_stmt.where(OrgScan.period == target_period)
     if framework:
         scan_stmt = scan_stmt.where(OrgScan.framework == framework)
     scans = list(db.execute(scan_stmt).scalars().all())
@@ -542,9 +554,12 @@ def org_diagnosis(
     else:
         health_level = "预警"
 
+    # ---------- 3. 历史趋势对比 ----------
+    trend = _health_trend(db, department, target_period, all_periods, health_rows)
+
     return {
         "department": department or "全部部门",
-        "period": period or (surveys[0].period if surveys else "-"),
+        "period": target_period or "-",
         "framework": framework or "全部框架",
         "org_health_score": health_score,
         "org_health_level": health_level,
@@ -553,9 +568,11 @@ def org_diagnosis(
         "scan_total": len(scan_rows),
         "scan_results": scan_rows,
         "bottlenecks": bottlenecks,
+        "trend": trend,
         "basis": (
             "健康分 = 各维度调研均分的平均值；维度差距 = 实际分 − 行业基准；"
-            "扫描差距 = 现状分 − 目标分，≤ −1.0 判定为瓶颈"
+            "扫描差距 = 现状分 − 目标分，≤ −1.0 判定为瓶颈；"
+            "趋势对比 = 本周期得分 − 上一周期得分，|Δ| ≥ 0.15 记为明显变化"
         ),
         "conclusion": (
             f"组织健康分 {health_score}（{health_level}）。"
@@ -571,7 +588,120 @@ def org_diagnosis(
                 if bottlenecks
                 else "组织扫描未发现显著瓶颈。"
             )
+            + (
+                f"对比 {trend['from_period']}，健康分"
+                f"{'上升' if trend['delta'] > 0 else ('下降' if trend['delta'] < 0 else '持平')}"
+                f" {abs(trend['delta'])}，"
+                f"{len(trend['deteriorating'])} 个维度下滑、"
+                f"{len(trend['improving'])} 个维度改善。"
+                if trend.get("available")
+                else "暂无上一周期数据，无法做趋势对比。"
+            )
         ),
+    }
+
+
+def _period_scores(
+    db: Session, department: str | None, period: str
+) -> dict[str, float]:
+    """取某个周期各健康度维度的平均分。"""
+    stmt = select(OrgHealthSurvey).where(OrgHealthSurvey.period == period)
+    if department:
+        stmt = stmt.where(OrgHealthSurvey.department == department)
+    by_dim: dict[str, list[float]] = {}
+    for s in db.execute(stmt).scalars().all():
+        by_dim.setdefault(s.dimension, []).append(s.score)
+    return {d: round(sum(v) / len(v), 2) for d, v in by_dim.items()}
+
+
+def _health_trend(
+    db: Session,
+    department: str | None,
+    target_period: str | None,
+    all_periods: list[str],
+    health_rows: list[dict],
+) -> dict:
+    """组织健康度的历史趋势对比。"""
+    empty = {
+        "available": False,
+        "from_period": "-",
+        "to_period": target_period or "-",
+        "delta": 0.0,
+        "score_from": None,
+        "score_to": None,
+        "dimensions": [],
+        "improving": [],
+        "deteriorating": [],
+        "comment": "暂无上一周期数据，无法做趋势对比。",
+    }
+    if not target_period or len(all_periods) < 2:
+        return empty
+
+    idx = all_periods.index(target_period) if target_period in all_periods else -1
+    if idx <= 0:
+        return empty
+    prev_period = all_periods[idx - 1]
+
+    prev_scores = _period_scores(db, department, prev_period)
+    if not prev_scores:
+        return empty
+
+    curr_scores = {r["dimension"]: r["score"] for r in health_rows}
+    dims = []
+    for dim in sorted(set(curr_scores) | set(prev_scores)):
+        before = prev_scores.get(dim)
+        after = curr_scores.get(dim)
+        if before is None or after is None:
+            continue
+        delta = round(after - before, 2)
+        if delta >= 0.15:
+            direction = "改善"
+        elif delta <= -0.15:
+            direction = "下滑"
+        else:
+            direction = "持平"
+        dims.append(
+            {
+                "dimension": dim,
+                "score_from": before,
+                "score_to": after,
+                "delta": delta,
+                "direction": direction,
+            }
+        )
+
+    dims.sort(key=lambda x: x["delta"])
+    score_from = round(sum(prev_scores.values()) / len(prev_scores), 2)
+    score_to = (
+        round(sum(curr_scores.values()) / len(curr_scores), 2) if curr_scores else None
+    )
+    delta = round(score_to - score_from, 2) if score_to is not None else 0.0
+
+    improving = [d for d in dims if d["direction"] == "改善"]
+    deteriorating = [d for d in dims if d["direction"] == "下滑"]
+
+    if delta >= 0.15:
+        comment = f"组织健康度整体改善 {delta} 分，可延续当前管理动作。"
+    elif delta <= -0.15:
+        comment = (
+            f"组织健康度下滑 {abs(delta)} 分，"
+            f"下滑最明显的是{'、'.join(d['dimension'] for d in deteriorating[:3]) or '—'}，"
+            f"建议专项复盘。"
+        )
+    else:
+        comment = "组织健康度基本持平，关注个别维度的波动即可。"
+
+    return {
+        "available": True,
+        "from_period": prev_period,
+        "to_period": target_period,
+        "delta": delta,
+        "score_from": score_from,
+        "score_to": score_to,
+        "dimensions": dims,
+        "improving": improving,
+        "deteriorating": deteriorating,
+        "comment": comment,
     }
 
 
@@ -653,18 +783,42 @@ def strategy_decode(
         sum(r["achievement"] * r["weight"] for r in all_rows) / total_weight, 3
     )
 
-    # 承接检查：部门目标是否都有上级目标
-    parent_ids = {g.id for g in goals}
-    orphan = [
-        r
-        for r in all_rows
-        if r["level"] == "部门"
-        and not any(
-            g.id == r["id"] and g.parent_id in parent_ids
-            for g in goals
-            if g.id == r["id"]
-        )
-    ]
+    # ---------- 目标对齐检查 ----------
+    # 对齐 = 每条非公司级目标都要挂到一个真实存在的上级目标上，
+    # 并且上级层级必须高于自己（组织 ← 公司，部门 ← 公司/组织）。
+    valid_ids = {g.id for g in goals}
+    level_rank = {"公司": 0, "组织": 1, "部门": 2}
+    level_map = {g.id: g.level for g in goals}
+    parent_map = {g.id: g.parent_id for g in goals}
+
+    unaligned = []
+    for r in all_rows:
+        if r["level"] == "公司":
+            continue
+        pid = parent_map.get(r["id"])
+        if pid is None or pid not in valid_ids:
+            r["align_issue"] = "未承接任何上级目标"
+            unaligned.append(r)
+            continue
+        up = level_map.get(pid)
+        if up is not None and level_rank.get(up, 9) >= level_rank.get(r["level"], 9):
+            r["align_issue"] = f"上级层级错误（挂在「{up}」级目标下）"
+            unaligned.append(r)
+
+    aligned_rate = round(
+        1 - len(unaligned) / max(1, len(all_rows) - len(by_level.get("公司", []))), 3
+    )
+
+    # ---------- 权重归一化检查 ----------
+    total_weight_sum = round(sum(r["weight"] for r in all_rows), 3)
+    covered_weight = round(
+        sum(r["weight"] for r in all_rows if r["level"] == "部门"), 3
+    )
+    weight_issue = (
+        f"全量目标权重合计 {total_weight_sum}，未归一化到 1.0，建议核对权重分配"
+        if abs(total_weight_sum - 1.0) > 0.05
+        else ""
+    )
 
     lagging = [r for r in all_rows if r["flag"] in ("有风险", "严重滞后")]
 
@@ -677,21 +831,33 @@ def strategy_decode(
         "department_goals": by_level.get("部门", []),
         "weighted_achievement": weighted,
         "lagging_goals": lagging,
-        "unaligned_goals": orphan,
+        "unaligned_goals": unaligned,
+        "alignment_rate": aligned_rate,
+        "department_weight_sum": covered_weight,
+        "total_weight_sum": total_weight_sum,
+        "weight_issue": weight_issue,
         "basis": (
             "目标达成率 = 当前值 / 目标值；加权达成率 = Σ(达成率 × 权重) / Σ权重；"
-            "≥1.0 已达成，≥0.8 进展良好，≥0.6 有风险，否则严重滞后"
+            "≥1.0 已达成，≥0.8 进展良好，≥0.6 有风险，否则严重滞后；"
+            "对齐检查 = 非公司级目标必须挂到真实存在且层级更高的上级目标"
         ),
         "conclusion": (
             f"共 {len(all_rows)} 个目标（公司 {len(by_level.get('公司', []))} / "
             f"组织 {len(by_level.get('组织', []))} / 部门 {len(by_level.get('部门', []))}），"
-            f"加权达成率 {round(weighted * 100, 1)}%。"
+            f"加权达成率 {round(weighted * 100, 1)}%，目标对齐率 "
+            f"{round(aligned_rate * 100, 1)}%。"
             + (
                 f"其中 {len(lagging)} 个目标进展落后，最需关注的是"
                 f"“{lagging[0]['name']}”（达成 {round(lagging[0]['achievement'] * 100, 1)}%）。"
                 if lagging
                 else "各层级目标进展正常。"
             )
+            + (
+                f"另有 {len(unaligned)} 个目标未正确承接上级目标，需补齐解码链路。"
+                if unaligned
+                else ""
+            )
+            + (f"（{weight_issue}）" if weight_issue else "")
         ),
     }
 

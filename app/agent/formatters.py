@@ -883,6 +883,27 @@ def format_od_diagnosis(result: dict) -> str:
             f"{r['current_score']} / 目标 {r['target_score']}，{r['severity']}"
             f"｜{r['issue']}（责任方 {r['owner']}）",
         )
+
+    trend = result.get("trend") or {}
+    if trend.get("available"):
+        direction = "上升" if trend["delta"] > 0 else ("下降" if trend["delta"] < 0 else "持平")
+        lines += [
+            "",
+            f"历史趋势（{trend['from_period']} → {trend['to_period']}）：健康分 "
+            f"{trend['score_from']} → {trend['score_to']}（{direction} {abs(trend['delta'])}）",
+        ]
+        lines += _bullets(
+            (trend.get("deteriorating") or [])[:3],
+            lambda r: f"下滑：{r['dimension']} {r['score_from']} → {r['score_to']}"
+            f"（{r['delta']}）",
+        )
+        lines += _bullets(
+            (trend.get("improving") or [])[:3],
+            lambda r: f"改善：{r['dimension']} {r['score_from']} → {r['score_to']}"
+            f"（+{r['delta']}）",
+        )
+        lines.append("  " + trend["comment"])
+
     lines += ["", "计算依据：" + result["basis"], "结论：" + result["conclusion"]]
     return _line(lines)
 
@@ -894,7 +915,8 @@ def format_od_strategy(result: dict) -> str:
     lines = [
         f"战略解码 · {result['department']}（{result['period']}）",
         f"共 {result['total']} 个目标，加权达成率 "
-        f"{round(result['weighted_achievement'] * 100, 1)}%",
+        f"{round(result['weighted_achievement'] * 100, 1)}%，"
+        f"目标对齐率 {round(result.get('alignment_rate', 0) * 100, 1)}%",
         "",
         "公司级目标：",
     ]
@@ -909,6 +931,17 @@ def format_od_strategy(result: dict) -> str:
         lambda r: f"{r['name']}（{r['owner_department']}）：达成 "
         f"{round(r['achievement'] * 100, 1)}% —— {r['flag']}",
     ) or ["  暂无"]
+
+    unaligned = result.get("unaligned_goals") or []
+    if unaligned:
+        lines += ["", "目标对齐问题："]
+        lines += _bullets(
+            unaligned,
+            lambda r: f"{r['name']}：{r.get('align_issue', '未承接上级目标')}",
+        )
+    if result.get("weight_issue"):
+        lines += ["", f"权重提示：{result['weight_issue']}"]
+
     lines += ["", "计算依据：" + result["basis"], "结论：" + result["conclusion"]]
     return _line(lines)
 

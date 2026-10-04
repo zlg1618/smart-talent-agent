@@ -62,6 +62,10 @@ INTENT_KEYWORDS = [
 
 UPDATE_KEYWORDS = ["改成", "改为", "修改为", "换成", "切换", "改成 ", "更新为", "改成"]
 
+# 沿用上一轮主题重算的表达，例如"重新看一下""再查一次"。
+# 命中后返回 UPDATE，由 route_by_topic 读取 active_topic 重新执行。
+REPEAT_KEYWORDS = ["重新", "再看", "再查", "再算", "再来一次", "同样"]
+
 # HRIS 六大子模块的关键词路由表。
 # 顺序即优先级：越具体的短语排越前，避免"招聘开会"被归入员工关系。
 HRIS_MODULE_KEYWORDS = [
@@ -159,6 +163,9 @@ def rule_intent(message: str) -> str:
             return intent
 
     if has_update:
+        return "UPDATE"
+    # "重新看一下""再查一次"：沿用上一轮业务主题重新计算
+    if any(k in text for k in REPEAT_KEYWORDS):
         return "UPDATE"
     return "CHAT"
 

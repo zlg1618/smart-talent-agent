@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Talent Agent · 组织与人才发展看板</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --line: #e4e7ec;
+    --text: #1f2733;
+    --muted: #6b7684;
+    --brand: #2f6fed;
+    --ok: #17a673;
+    --warn: #e8912d;
+    --bad: #d94b4b;
+    --shadow: 0 1px 3px rgba(16, 24, 40, 0.06), 0 1px 2px rgba(16, 24, 40, 0.04);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Microsoft YaHei", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px; line-height: 1.6;
+  }
+  header {
+    background: var(--card); border-bottom: 1px solid var(--line);
+    padding: 14px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  .spacer { flex: 1; }
+  button {
+    border: 1px solid var(--line); background: var(--card); color: var(--text);
+    padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
+    font-family: inherit;
+  }
+  button:hover { border-color: var(--brand); color: var(--brand); }
+  button.primary { background: var(--brand); color: #fff; border-color: var(--brand); }
+  button.primary:hover { opacity: .9; color: #fff; }
+  nav.tabs {
+    background: var(--card); border-bottom: 1px solid var(--line);
+    padding: 0 24px; display: flex; gap: 4px; overflow-x: auto;
+  }
+  nav.tabs button {
+    border: none; border-bottom: 2px solid transparent; border-radius: 0;
+    padding: 12px 16px; background: transparent; color: var(--muted);
+  }
+  nav.tabs button.active { color: var(--brand); border-bottom-color: var(--brand); font-weight: 600; }
+  main { padding: 20px 24px 60px; max-width: 1280px; }
+  .view { display: none; }
+  .view.active { display: block; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; box-shadow: var(--shadow); }
+  .card .label { color: var(--muted); font-size: 12px; }
+  .card .value { font-size: 24px; font-weight: 600; margin-top: 4px; }
+  .card .hint { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; box-shadow: var(--shadow); margin-bottom: 18px; }
+  .panel h2 { font-size: 15px; margin: 0 0 4px; font-weight: 600; }
+  .panel .desc { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+  .conclusion {
+    background: #f0f5ff; border-left: 3px solid var(--brand);
+    padding: 10px 14px; border-radius: 4px; margin-bottom: 14px; font-size: 13px;
+  }
+  .basis { color: var(--muted); font-size: 12px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; }
+  .tag.ok { background: #e6f7f0; color: var(--ok); }
+  .tag.warn { background: #fdf3e6; color: var(--warn); }
+  .tag.bad { background: #fdecec; color: var(--bad); }
+  .tag.info { background: #eef2f7; color: var(--muted); }
+  .bar { height: 8px; background: #eef1f5; border-radius: 4px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: var(--brand); border-radius: 4px; }
+  .bar.ok > i { background: var(--ok); }
+  .bar.warn > i { background: var(--warn); }
+  .bar.bad > i { background: var(--bad); }
+  /* 组织架构树 */
+  ul.tree, ul.tree ul { list-style: none; margin: 0; padding: 0; }
+  ul.tree ul { margin-left: 22px; border-left: 1px dashed var(--line); padding-left: 14px; }
+  ul.tree li { padding: 4px 0; }
+  .node { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .node .name { font-weight: 600; }
+  .node .meta { color: var(--muted); font-size: 12px; }
+  /* 金字塔 */
+  .pyr { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 6px; }
+  .pyr .row { height: 22px; border-radius: 3px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; }
+  .pyr .s { background: #4a7fe0; }
+  .pyr .m { background: #2f6fed; }
+  .pyr .b { background: #8fb0f0; }
+  /* 对话 */
+  .chat-box { height: 340px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: #fbfcfd; }
+  .msg { margin-bottom: 12px; }
+  .msg .who { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+  .msg .txt { white-space: pre-wrap; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .msg.me .txt { background: #eaf1ff; border-color: #cddffa; }
+  .chat-input { display: flex; gap: 8px; margin-top: 10px; }
+  .chat-input input { flex: 1; padding: 9px 12px; border: 1px solid var(--line); border-radius: 6px; font-family: inherit; font-size: 14px; }
+  .empty { color: var(--muted); padding: 30px; text-align: center; }
+  .err { background: #fdecec; color: var(--bad); padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; }
+  code { background: #eef1f5; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Smart Talent Agent · 组织与人才发展看板</h1>
+    <div class="sub">组织发展 OD ｜ 人才发展 TD ｜ 数据来自确定性计算引擎</div>
+  </div>
+  <div class="spacer"></div>
+  <button id="btn-refresh" class="primary">刷新数据</button>
+  <button onclick="window.open('/docs','_blank')">API 文档</button>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-view="structure">组织架构与管控</button>
+  <button class="tab" data-view="effect">人效看板</button>
+  <button class="tab" data-view="pyramid">职级金字塔</button>
+  <button class="tab" data-view="program">发展项目</button>
+  <button class="tab" data-view="chat">对话问数</button>
+</nav>
+
+<main>
+  <!-- 组织架构 -->
+  <section class="view active" id="view-structure">
+    <div id="structure-cards" class="cards"></div>
+    <div class="panel">
+      <h2>组织架构树</h2>
+      <div class="desc">按隶属关系展开，节点标注编制 / 在编 / 达成率与管控方式</div>
+      <div id="structure-tree"></div>
+    </div>
+    <div class="panel">
+      <h2>管控模式分布</h2>
+      <div class="desc">组织模式、管控模式、集权分权三张分布表，支撑架构与管控设计</div>
+      <div id="structure-dist"></div>
+    </div>
+  </section>
+
+  <!-- 人效 -->
+  <section class="view" id="view-effect">
+    <div id="effect-cards" class="cards"></div>
+    <div class="panel">
+      <h2>部门人效排名</h2>
+      <div class="desc">人均产出、人工成本率与人效指数（1.0 = 全公司平均水平）</div>
+      <div id="effect-table"></div>
+    </div>
+  </section>
+
+  <!-- 职级金字塔 -->
+  <section class="view" id="view-pyramid">
+    <div id="pyramid-cards" class="cards"></div>
+    <div class="panel">
+      <h2>部门职级结构</h2>
+      <div class="desc">基层 / 中级 / 高级的人数结构与形态判定（腰部拥堵 / 基层偏重 / 倒金字塔 / 结构均衡）</div>
+      <div id="pyramid-list"></div>
+    </div>
+  </section>
+
+  <!-- 发展项目 -->
+  <section class="view" id="view-program">
+    <div id="program-cards" class="cards"></div>
+    <div class="panel">
+      <h2>项目明细</h2>
+      <div class="desc">覆盖率 = 入学 / 容量，完成率 = 完成 / 入学</div>
+      <div id="program-table"></div>
+    </div>
+  </section>
+
+  <!-- 对话 -->
+  <section class="view" id="view-chat">
+    <div class="panel">
+      <h2>对话问数</h2>
+      <div class="desc">
+        直接问，例如：<code>做一次组织诊断</code> <code>分析各部门人效</code>
+        <code>做一次人才盘点</code> <code>关键岗位继任情况</code> <code>有哪些人可以提拔</code>
+      </div>
+      <div class="chat-box" id="chat-box"></div>
+      <div class="chat-input">
+        <input id="chat-input" placeholder="输入你的问题，回车发送" autocomplete="off">
+        <button class="primary" id="btn-send">发送</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const API = {
+  structure: '/api/core/organization-development/structure',
+  effect: '/api/core/organization-development/effectiveness',
+  pyramid: '/api/core/organization-development/job-architecture',
+  program: '/api/core/talent-development/program',
+  chat: '/api/ai/chat'
+};
+
+function pct(v) { return (v == null ? 0 : v * 100).toFixed(1) + '%'; }
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+function tierClass(t) {
+  if (!t) return 'info';
+  if (/领先|健康|已满编|活跃|优良|达标|已完成|有立即/.test(t)) return 'ok';
+  if (/偏低|缺口|需关注|需改进|拥堵|偏重|金字塔|有风险|较大|一/.test(t)) return 'warn';
+  if (/严重|预警|滞后|淘汰/.test(t)) return 'bad';
+  return 'info';
+}
+function errBox(msg) { return '<div class="err">' + esc(msg) + '</div>'; }
+
+async function getJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(url + ' 返回 ' + r.status);
+  return await r.json();
+}
+
+function renderCards(el, items) {
+  document.getElementById(el).innerHTML = items.map(c =>
+    '<div class="card"><div class="label">' + esc(c.label) + '</div>' +
+    '<div class="value">' + esc(c.value) + '</div>' +
+    (c.hint ? '<div class="hint">' + esc(c.hint) + '</div>' : '') + '</div>'
+  ).join('');
+}
+
+function distTable(title, map) {
+  if (!map || !Object.keys(map).length) return '';
+  return '<div style="margin-bottom:12px"><div style="color:var(--muted);font-size:12px;margin-bottom:4px">' +
+    esc(title) + '</div>' + Object.entries(map).map(([k, v]) =>
+      '<span class="tag info" style="margin-right:6px">' + esc(k) + ' · ' + v + '</span>'
+    ).join('') + '</div>';
+}
+
+/* ---------- 组织架构 ---------- */
+async function loadStructure() {
+  const box = document.getElementById('structure-tree');
+  try {
+    const d = await getJSON(API.structure);
+    if (d.error) { box.innerHTML = errBox(d.error); return; }
+
+    renderCards('structure-cards', [
+      { label: '组织单元', value: d.total_units, hint: '最深 ' + d.max_depth + ' 层' },
+      { label: '编制达成率', value: pct(d.overall_fill_rate), hint: '在编 ' + d.total_actual + ' / 编制 ' + d.total_planned },
+      { label: '平均管理幅度', value: d.avg_span_of_control, hint: '健康区间 4–12 人' },
+      { label: '编制缺口', value: d.total_gap, hint: '缺口单元 ' + (d.shortage_units || []).length + ' 个' }
+    ]);
+
+    const units = d.units || [];
+    const byParent = {};
+    units.forEach(u => { (byParent[u.parent || ''] ||= []).push(u); });
+    const roots = units.filter(u => !u.parent || u.parent === '-' || !units.some(x => x.name === u.parent));
+
+    function node(u) {
+      const cls = tierClass(u.status);
+      const kids = byParent[u.name] || [];
+      return '<li><div class="node">' +
+        '<span class="name">' + esc(u.name) + '</span>' +
+        '<span class="tag ' + cls + '">' + esc(u.status) + '</span>' +
+        '<span class="meta">' + esc(u.unit_type) + ' · 编制 ' + u.planned +
+        ' / 在编 ' + u.actual + ' · 达成 ' + pct(u.fill_rate) +
+        ' · ' + esc(u.control_mode) + ' · ' + esc(u.authority) + '</span></div>' +
+        (kids.length ? '<ul>' + kids.map(node).join('') + '</ul>' : '') + '</li>';
+    }
+    box.innerHTML = (d.conclusion ? '<div class="conclusion">' + esc(d.conclusion) + '</div>' : '') +
+      '<ul class="tree">' + roots.map(node).join('') + '</ul>' +
+      (d.basis ? '<div class="basis">计算依据：' + esc(d.basis) + '</div>' : '');
+
+    document.getElementById('structure-dist').innerHTML =
+      distTable('组织模式', d.org_model_distribution) +
+      distTable('管控模式', d.control_mode_distribution) +
+      distTable('集权 / 分权', d.authority_distribution);
+  } catch (e) {
+    box.innerHTML = errBox('加载失败：' + e.message + '　（请先执行 python seed_data.py 生成数据）');
+  }
+}
+
+/* ---------- 人效 ---------- */
+async function loadEffect() {
+  const box = document.getElementById('effect-table');
+  try {
+    const d = await getJSON(API.effect);
+    if (d.error) { box.innerHTML = errBox(d.error); return; }
+
+    renderCards('effect-cards', [
+      { label: '整体人均产出', value: d.overall_output_per_head + ' 万元', hint: '在编 ' + d.total_headcount + ' 人' },
+      { label: '人工成本率', value: pct(d.overall_cost_rate), hint: '人工成本 ' + d.total_labor_cost + ' 万元' },
+      { label: '平均人均产出', value: d.avg_output_per_head + ' 万元', hint: '各部门均值' },
+      { label: '人效偏低部门', value: (d.low_efficiency_departments || []).length, hint: '人效指数 < 0.85' }
+    ]);
+
+    const rows = (d.ranking || []).map(r => {
+      const w = Math.min(100, r.output_index * 50);
+      return '<tr><td>' + esc(r.department) + '</td>' +
+        '<td>' + r.headcount + '</td>' +
+        '<td>' + r.output_per_head + '</td>' +
+        '<td>' + pct(r.cost_rate) + '</td>' +
+        '<td style="min-width:130px"><div class="bar ' + tierClass(r.tier) + '"><i style="width:' + w + '%"></i></div>' +
+        '<span class="meta" style="font-size:12px;color:var(--muted)">指数 ' + r.output_index + '</span></td>' +
+        '<td><span class="tag ' + tierClass(r.tier) + '">' + esc(r.tier) + '</span></td>' +
+        '<td style="font-size:12px;color:var(--muted)">' + esc(r.advice) + '</td></tr>';
+    }).join('');
+
+    box.innerHTML = (d.conclusion ? '<div class="conclusion">' + esc(d.conclusion) + '</div>' : '') +
+      '<table><thead><tr><th>部门</th><th>在编</th><th>人均产出(万)</th><th>人工成本率</th>' +
+      '<th>人效指数</th><th>分档</th><th>建议</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+      (d.basis ? '<div class="basis">计算依据：' + esc(d.basis) + '</div>' : '');
+  } catch (e) {
+    box.innerHTML = errBox('加载失败：' + e.message);
+  }
+}
+
+/* ---------- 职级金字塔 ---------- */
+async function loadPyramid() {
+  const box = document.getElementById('pyramid-list');
+  try {
+    const d = await getJSON(API.pyramid);
+    if (d.error) { box.innerHTML = errBox(d.error); return; }
+
+    renderCards('pyramid-cards', [
+      { label: '职级配置', value: d.total_levels, hint: '职族 × 职级' },
+      { label: '覆盖人数', value: d.total_headcount, hint: '在职员工' },
+      { label: '腰部拥堵部门', value: (d.congested_departments || []).length, hint: '中级占比 ≥ 60%' },
+      { label: '晋升停滞部门', value: (d.low_promotion_departments || []).length, hint: '年均晋升率 < 8%' }
+    ]);
+
+    const html = (d.by_department || []).map(f => {
+      const total = f.total || 1;
+      const w = n => Math.max(18, Math.round(n / total * 100)) + '%';
+      return '<div style="padding:12px 0;border-bottom:1px solid var(--line)">' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+        '<strong>' + esc(f.department) + '</strong>' +
+        '<span class="tag ' + (f.shape === '结构均衡' ? 'ok' : 'warn') + '">' + esc(f.shape) + '</span>' +
+        '<span class="tag info">年均晋升率 ' + pct(f.avg_promotion_rate) + '</span></div>' +
+        '<div class="pyr" style="align-items:stretch">' +
+        '<div class="row s" style="width:' + w(f.senior) + '">高级 ' + f.senior + '</div>' +
+        '<div class="row m" style="width:' + w(f.mid) + '">中级 ' + f.mid + '</div>' +
+        '<div class="row b" style="width:' + w(f.base) + '">基层 ' + f.base + '</div>' +
+        '</div>' +
+        '<div style="font-size:12px;color:var(--muted);margin-top:6px">' + esc(f.advice) + '</div></div>';
+    }).join('');
+
+    box.innerHTML = (d.conclusion ? '<div class="conclusion">' + esc(d.conclusion) + '</div>' : '') + html +
+      (d.basis ? '<div class="basis">计算依据：' + esc(d.basis) + '</div>' : '');
+  } catch (e) {
+    box.innerHTML = errBox('加载失败：' + e.message);
+  }
+}
+
+/* ---------- 发展项目 ---------- */
+async function loadProgram() {
+  const box = document.getElementById('program-table');
+  try {
+    const d = await getJSON(API.program);
+    if (d.error) { box.innerHTML = errBox(d.error); return; }
+
+    renderCards('program-cards', [
+      { label: '项目数', value: d.total },
+      { label: '累计入学', value: d.total_enrolled + ' 人' },
+      { label: '预算', value: d.total_budget + ' 万元' },
+      { label: '平均完成率', value: pct(d.avg_completion_rate), hint: '满意度 ' + d.avg_satisfaction }
+    ]);
+
+    const rows = (d.programs || []).map(r =>
+      '<tr><td>' + esc(r.name) + '</td><td>' + esc(r.program_type) + '</td>' +
+      '<td>' + r.enrolled + '/' + r.capacity + '</td>' +
+      '<td style="min-width:110px"><div class="bar ' + (r.fill_rate >= .8 ? 'ok' : 'warn') +
+      '"><i style="width:' + Math.min(100, r.fill_rate * 100) + '%"></i></div>' + pct(r.fill_rate) + '</td>' +
+      '<td style="min-width:110px"><div class="bar ' + (r.completion_rate >= .85 ? 'ok' : (r.completion_rate >= .7 ? 'warn' : 'bad')) +
+      '"><i style="width:' + Math.min(100, r.completion_rate * 100) + '%"></i></div>' + pct(r.completion_rate) + '</td>' +
+      '<td>' + r.satisfaction + '</td><td>' + r.cost_per_head + ' 元</td>' +
+      '<td><span class="tag ' + tierClass(r.grade) + '">' + esc(r.grade) + '</span></td></tr>'
+    ).join('');
+
+    box.innerHTML = (d.conclusion ? '<div class="conclusion">' + esc(d.conclusion) + '</div>' : '') +
+      '<table><thead><tr><th>项目</th><th>类型</th><th>入学/容量</th><th>覆盖率</th>' +
+      '<th>完成率</th><th>满意度</th><th>人均投入</th><th>评级</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+      (d.basis ? '<div class="basis">计算依据：' + esc(d.basis) + '</div>' : '');
+  } catch (e) {
+    box.innerHTML = errBox('加载失败：' + e.message);
+  }
+}
+
+/* ---------- 对话 ---------- */
+function pushMsg(who, txt, me) {
+  const box = document.getElementById('chat-box');
+  box.innerHTML += '<div class="msg' + (me ? ' me' : '') + '"><div class="who">' + esc(who) + '</div>' +
+    '<div class="txt">' + esc(txt) + '</div></div>';
+  box.scrollTop = box.scrollHeight;
+}
+
+async function send() {
+  const input = document.getElementById('chat-input');
+  const q = input.value.trim();
+  if (!q) return;
+  input.value = '';
+  pushMsg('我', q, true);
+  try {
+    const r = await fetch(API.chat, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ thread_id: 'web-ui', message: q })
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    const tag = [d.request_type, d.core_module || d.hris_module, d.result_topic].filter(Boolean).join(' / ');
+    pushMsg('Agent（' + tag + '）', d.answer || '（无回答）', false);
+  } catch (e) {
+    pushMsg('系统', '请求失败：' + e.message, false);
+  }
+}
+
+/* ---------- 事件绑定 ---------- */
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('view-' + btn.dataset.view).classList.add('active');
+  };
+});
+document.getElementById('btn-refresh').onclick = () => {
+  loadStructure(); loadEffect(); loadPyramid(); loadProgram();
+};
+document.getElementById('btn-send').onclick = send;
+document.getElementById('chat-input').onkeydown = e => { if (e.key === 'Enter') send(); };
+
+loadStructure(); loadEffect(); loadPyramid(); loadProgram();
+pushMsg('Agent', '你好，我是组织发展与人才发展 Agent。可以直接问：\n' +
+  '· 做一次组织诊断　· 分析各部门人效　· 战略解码做得怎么样\n' +
+  '· 做一次人才盘点　· 关键岗位继任情况　· 有哪些人可以提拔', false);
+</script>
+</body>
+</html>
