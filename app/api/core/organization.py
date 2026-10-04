@@ -48,11 +48,51 @@ def job_architecture(
 def change(
     department: str | None = Query(None),
     change_type: str | None = Query(
-        None, description="合并 / 拆分 / 扩编 / 缩编 / 新设 / 调整"
+        None, description="合并 / 拆分 / 扩编 / 缩编 / 新设 / 调整 / 并购 / 转型"
     ),
     db: Session = Depends(get_db),
 ):
-    """组织变革模拟：影响人数与成本测算。"""
+    """组织变革管理：影响人数、成本、阶段与变革阻力。"""
     return organization_tool.run_org_change(
         db, message=change_type or "组织变革", department=department
+    )
+
+
+@router.get("/diagnosis")
+def diagnosis(
+    department: str | None = Query(None),
+    period: str | None = Query(None),
+    framework: str | None = Query(None, description="seven_s / six_box / five_dim"),
+    db: Session = Depends(get_db),
+):
+    """组织诊断：健康度调研 + 组织扫描（7S / 6-BOX / 五维框架）。"""
+    label = {"seven_s": "7S", "six_box": "6-BOX", "five_dim": "五维"}.get(
+        framework or "", "组织诊断"
+    )
+    return organization_tool.run_org_diagnosis(
+        db, message=label, department=department, period=period
+    )
+
+
+@router.get("/strategy")
+def strategy(
+    department: str | None = Query(None),
+    period: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """战略解码：公司目标 → 组织目标 → 部门目标的拆解与达成追踪。"""
+    return organization_tool.run_strategy_decode(
+        db, message="战略解码", department=department, period=period
+    )
+
+
+@router.get("/culture")
+def culture(
+    department: str | None = Query(None),
+    period: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """企业文化与组织氛围：价值观落地、氛围感知与员工敬业度。"""
+    return organization_tool.run_org_culture(
+        db, message="文化氛围", department=department, period=period
     )

@@ -26,6 +26,9 @@ from app.models import (
     Candidate,
     CandidateSkill,
     Competency,
+    CompetencyLevel,
+    CultureSurvey,
+    DevelopmentPlan,
     DevelopmentProgram,
     Employee,
     EmployeeBenefit,
@@ -37,18 +40,25 @@ from app.models import (
     InterviewSchedule,
     JobArchitecture,
     JobPost,
+    KeyPosition,
     LeaveRequest,
     Mentorship,
     OfferRecord,
     OrgChange,
     OrgEffectiveness,
+    OrgHealthSurvey,
+    OrgScan,
     OrgUnit,
     PerformanceGoal,
     PerformanceRecord,
     PerformanceReview,
+    PositionCompetency,
     PotentialAssessment,
     RelationCase,
+    Review360,
     SalaryBand,
+    StrategicGoal,
+    SuccessionCandidate,
     TalentPool,
     TalentStandard,
     TrainingCourse,
@@ -137,6 +147,44 @@ LEVEL_BANDS = {
 # 任职资格四维度及其权重
 STANDARD_DIMENSIONS = ["专业能力", "业务贡献", "领导力", "学习敏锐"]
 
+# 组织健康度调研维度
+HEALTH_DIMENSIONS = [
+    "战略清晰",
+    "组织架构",
+    "流程效率",
+    "人才供给",
+    "文化氛围",
+    "激励机制",
+    "协同效率",
+]
+
+# 胜任力等级行为描述模板
+LEVEL_BEHAVIOR = {
+    1: "在指导下完成简单任务，需要他人把关产出质量",
+    2: "能独立完成常规任务，遇到复杂情况需要支持",
+    3: "能独立承担完整任务，产出稳定且可复用",
+    4: "能处理复杂与跨领域问题，并带动他人提升",
+    5: "能定义标准与方法论，成为组织内的权威来源",
+}
+
+# 360 评估维度与评价角色
+REVIEW_360_DIMENSIONS = ["专业能力", "协作沟通", "领导力", "执行力"]
+REVIEW_360_ROLES = ["自评", "上级", "同级", "下级"]
+
+# 关键岗位定义（岗位、部门、职级、重要级别、空缺风险）
+KEY_POSITION_DEFS = [
+    ("技术总监", "技术中心", "M3", "高", "高"),
+    ("首席架构师", "技术中心", "P8", "高", "中"),
+    ("技术经理", "技术中心", "M1", "中", "中"),
+    ("产品总监", "产品部", "M2", "高", "高"),
+    ("高级产品经理", "产品部", "P7", "中", "低"),
+    ("销售总监", "销售部", "M2", "高", "高"),
+    ("区域经理", "销售部", "M1", "中", "中"),
+    ("HR 总监", "人力资源部", "M2", "高", "中"),
+    ("组织发展经理", "人力资源部", "P6", "中", "低"),
+    ("财务总监", "财务部", "M1", "高", "中"),
+]
+
 DIMENSION_WEIGHT = {
     "专业能力": 0.35,
     "业务贡献": 0.30,
@@ -180,6 +228,12 @@ def _grade(score: float) -> str:
     return "C"
 
 
+def _num_level(level: str) -> int:
+    """职级字符串取数字部分，用于推导能力要求等级。"""
+    digits = "".join(ch for ch in level if ch.isdigit())
+    return int(digits) if digits else 1
+
+
 def _hire_date() -> date:
     year = random.randint(2017, 2025)
     month = random.randint(1, 12)
@@ -190,10 +244,20 @@ def clear_all(db):
     for table in (
         # 核心双域：人才发展
         Mentorship,
+        DevelopmentPlan,
         DevelopmentProgram,
         TalentPool,
         TalentStandard,
+        SuccessionCandidate,
+        KeyPosition,
+        Review360,
+        PositionCompetency,
+        CompetencyLevel,
         # 核心双域：组织发展
+        StrategicGoal,
+        CultureSurvey,
+        OrgScan,
+        OrgHealthSurvey,
         OrgChange,
         JobArchitecture,
         OrgEffectiveness,
@@ -333,7 +397,18 @@ def seed(db):
             period="2025H1",
         )
     )
+    # 各部门采用不同的组织模式与管控方式，便于演示架构与管控设计
+    ORG_DESIGN = {
+        "技术中心": ("平台制", "战略管控", "分权", "技术选型与架构决策下放至平台组，预算由总部审批"),
+        "产品部": ("项目制", "操作管控", "混合", "产品方向与优先级由总部决策，执行层面授权项目组"),
+        "销售部": ("事业部制", "财务管控", "分权", "区域负责人拥有定价与客户政策决策权，仅考核财务结果"),
+        "人力资源部": ("职能制", "操作管控", "集权", "人事政策统一制定，各业务线 HRBP 执行"),
+        "财务部": ("职能制", "操作管控", "集权", "资金与合规事项集中审批，报销分级授权"),
+    }
     for dept, cfg in DEPARTMENTS.items():
+        org_model, control_mode, authority, rights = ORG_DESIGN.get(
+            dept, ("职能制", "战略管控", "分权", "")
+        )
         children_planned = 0
         for suffix in ("一组", "二组"):
             actual = (
@@ -353,6 +428,10 @@ def seed(db):
                     manager_name=f"{dept}{suffix}负责人",
                     planned_headcount=planned,
                     actual_headcount=actual,
+                    org_model=org_model,
+                    control_mode=control_mode,
+                    authority=authority,
+                    decision_rights=rights,
                     period="2025H1",
                 )
             )
@@ -366,6 +445,10 @@ def seed(db):
                 manager_name=f"{dept}负责人",
                 planned_headcount=children_planned,
                 actual_headcount=cfg["headcount"],
+                org_model=org_model,
+                control_mode=control_mode,
+                authority=authority,
+                decision_rights=rights,
                 period="2025H1",
             )
         )
@@ -411,15 +494,28 @@ def seed(db):
             )
 
     # ---------- 组织发展：组织变革方案 ----------
+    # (方案, 部门, 类型, 源, 目标, 影响人数, 成本, 状态, 阶段, 阻力, 阻力来源)
     change_defs = [
-        ("技术中心平台与业务线拆分", "技术中心", "拆分", "技术中心", "平台组/业务组", 18, 96.0, "待审批"),
-        ("产品部与设计中心合并", "产品部", "合并", "设计中心", "产品部", 12, -38.0, "进行中"),
-        ("销售部区域扩编", "销售部", "扩编", "-", "销售部二组", 24, 260.0, "进行中"),
-        ("财务部共享中心新设", "财务部", "新设", "-", "财务共享中心", 8, 74.0, "待审批"),
-        ("人力资源部三支柱调整", "人力资源部", "调整", "人力资源部", "HRBP/COE/SSC", 9, 12.0, "已完成"),
-        ("技术中心测试团队缩编", "技术中心", "缩编", "测试组", "-", 6, -55.0, "待审批"),
+        ("技术中心平台与业务线拆分", "技术中心", "拆分", "技术中心", "平台组/业务组",
+         18, 96.0, "待审批", "宣贯", "高", "资深工程师担心汇报线变动与技术栈统一"),
+        ("产品部与设计中心合并", "产品部", "合并", "设计中心", "产品部",
+         12, -38.0, "进行中", "试点", "中", "设计师担心话语权下降"),
+        ("销售部区域扩编", "销售部", "扩编", "-", "销售部二组",
+         24, 260.0, "进行中", "推广", "低", ""),
+        ("财务部共享中心新设", "财务部", "新设", "-", "财务共享中心",
+         8, 74.0, "待审批", "宣贯", "中", "业务财务担心流程变长"),
+        ("人力资源部三支柱调整", "人力资源部", "调整", "人力资源部", "HRBP/COE/SSC",
+         9, 12.0, "已完成", "固化", "低", ""),
+        ("技术中心测试团队缩编", "技术中心", "缩编", "测试组", "-",
+         6, -55.0, "待审批", "宣贯", "高", "测试岗位对转岗去向存疑"),
+        ("海外业务并购整合", "销售部", "并购", "海外事业部", "国际业务中心",
+         36, 420.0, "进行中", "试点", "高", "双方文化差异与薪酬体系不一致"),
+        ("职能线数字化转型", "人力资源部", "转型", "-", "数字化 HR 中台",
+         15, 130.0, "进行中", "宣贯", "中", "部分 HR 对新系统操作有抵触"),
     ]
-    for name, dept, ctype, src, tgt, affected, cost, status in change_defs:
+    for row in change_defs:
+        name, dept, ctype, src, tgt, affected, cost, status = row[:8]
+        stage, resistance, source = row[8], row[9], row[10]
         db.add(
             OrgChange(
                 name=name,
@@ -430,10 +526,157 @@ def seed(db):
                 affected_headcount=affected,
                 cost_impact=cost,
                 status=status,
+                stage=stage,
+                resistance=resistance,
+                resistance_source=source,
                 target_date=date(2025, random.choice([7, 8, 9, 10]), random.randint(1, 28)),
                 note=f"{ctype}方案，影响 {affected} 人，成本影响 {cost} 万元/年",
             )
         )
+
+    # ---------- 组织发展：组织健康度调研 ----------
+    health_base = {
+        "技术中心": 3.5, "产品部": 3.7, "销售部": 3.0,
+        "人力资源部": 4.0, "财务部": 3.8,
+    }
+    for dept in DEPARTMENTS:
+        base = health_base.get(dept, 3.5)
+        for dim in HEALTH_DIMENSIONS:
+            score = round(min(5.0, max(1.0, base + random.uniform(-0.7, 0.7))), 2)
+            db.add(
+                OrgHealthSurvey(
+                    department=dept,
+                    period="2025H1",
+                    dimension=dim,
+                    score=score,
+                    benchmark=round(random.uniform(3.5, 3.8), 2),
+                    sample=DEPARTMENTS[dept]["headcount"],
+                )
+            )
+
+    # ---------- 组织发展：组织扫描（7S / 6-BOX / 五维） ----------
+    scan_defs = {
+        "seven_s": [
+            ("战略", "战略方向清晰但未分解到部门级目标"),
+            ("结构", "矩阵汇报导致职责边界模糊"),
+            ("制度", "绩效与激励制度更新滞后"),
+            ("共同价值观", "价值观未纳入管理者考核"),
+            ("风格", "高层决策偏集中，一线授权不足"),
+            ("人员", "关键岗位后备不足"),
+            ("技能", "新技术栈能力储备不足"),
+        ],
+        "six_box": [
+            ("使命目标", "部门目标与公司目标对齐度不足"),
+            ("组织", "分工与流程匹配度一般"),
+            ("关系", "跨部门冲突主要出现在需求优先级"),
+            ("激励", "激励与贡献挂钩不够直接"),
+            ("领导", "中层管理者辅导能力参差"),
+            ("支持", "数据与工具支持不足"),
+        ],
+        "five_dim": [
+            ("战略", "战略解码未覆盖到一线"),
+            ("组织", "层级偏深，决策链条长"),
+            ("人才", "高潜保留率下滑"),
+            ("机制", "晋升机制透明度不足"),
+            ("文化", "跨部门协作氛围待改善"),
+        ],
+    }
+    for framework, dims in scan_defs.items():
+        for dept in DEPARTMENTS:
+            base = health_base.get(dept, 3.5)
+            for dim, issue in dims:
+                current = round(min(5.0, max(1.0, base + random.uniform(-0.9, 0.9))), 1)
+                db.add(
+                    OrgScan(
+                        department=dept,
+                        period="2025H1",
+                        framework=framework,
+                        dimension=dim,
+                        current_score=current,
+                        target_score=4.2,
+                        issue=issue,
+                        owner=f"{dept}负责人",
+                    )
+                )
+
+    # ---------- 组织发展：战略解码 ----------
+    company_goals = [
+        ("营收规模突破 3 亿", "营收", 30000.0, 21800.0, 0.30),
+        ("毛利率提升至 45%", "毛利率", 45.0, 38.5, 0.20),
+        ("重点行业客户突破 60 家", "客户数", 60.0, 41.0, 0.20),
+    ]
+    org_goals = [
+        ("技术中心", "核心产品交付准时率 ≥ 90%", "交付准时率", 90.0, 78.0, 0.12),
+        ("销售部", "新签合同额 1.8 亿", "新签合同额", 18000.0, 12400.0, 0.18),
+    ]
+    dept_goals = [
+        ("技术中心", "线上重大故障数 ≤ 3 次", "故障次数", 3.0, 5.0, 0.06),
+        ("技术中心", "人均需求交付量提升 25%", "人均交付量", 25.0, 14.0, 0.06),
+        ("产品部", "重点功能准时上线率 ≥ 85%", "上线率", 85.0, 62.0, 0.06),
+        ("销售部", "大客户续约率 ≥ 88%", "续约率", 88.0, 71.0, 0.08),
+        ("人力资源部", "关键岗位继任覆盖率 100%", "覆盖率", 100.0, 62.0, 0.05),
+        ("财务部", "预算执行偏差 ≤ 5%", "预算偏差", 5.0, 7.4, 0.03),
+    ]
+    goal_counter = 1
+    company_ids = []
+    for name, metric, target, current, weight in company_goals:
+        gid = goal_counter
+        goal_counter += 1
+        company_ids.append(gid)
+        db.add(
+            StrategicGoal(
+                id=gid, level="公司", parent_id=None, name=name,
+                owner_department="公司总部", metric=metric,
+                target_value=target, current_value=current,
+                weight=weight, period="2025H1", status="进行中",
+            )
+        )
+    for dept, name, metric, target, current, weight in org_goals:
+        gid = goal_counter
+        goal_counter += 1
+        db.add(
+            StrategicGoal(
+                id=gid, level="组织", parent_id=company_ids[0], name=name,
+                owner_department=dept, metric=metric,
+                target_value=target, current_value=current,
+                weight=weight, period="2025H1", status="进行中",
+            )
+        )
+    for dept, name, metric, target, current, weight in dept_goals:
+        gid = goal_counter
+        goal_counter += 1
+        db.add(
+            StrategicGoal(
+                id=gid, level="部门", parent_id=company_ids[0], name=name,
+                owner_department=dept, metric=metric,
+                target_value=target, current_value=current,
+                weight=weight, period="2025H1", status="进行中",
+            )
+        )
+
+    # ---------- 组织发展：文化与组织氛围 ----------
+    culture_dims = {
+        "价值观认同": "价值观行为化，纳入管理者考核与晋升标准",
+        "协作氛围": "设置跨部门共同目标与联合激励",
+        "心理安全": "建立匿名反馈通道与无责复盘机制",
+        "管理风格": "开展辅导式领导力训练营",
+        "成长空间": "打通任职资格与发展通道",
+        "敬业度": "优化直接主管管理方式与认可机制",
+    }
+    for dept in DEPARTMENTS:
+        base = health_base.get(dept, 3.5)
+        for dim, initiative in culture_dims.items():
+            score = round(min(5.0, max(1.0, base + random.uniform(-0.6, 0.8))), 2)
+            db.add(
+                CultureSurvey(
+                    department=dept,
+                    period="2025H1",
+                    dimension=dim,
+                    score=score,
+                    sample=DEPARTMENTS[dept]["headcount"],
+                    initiative=initiative,
+                )
+            )
 
     # ---------- 人才发展：任职资格标准 ----------
     for family in sorted({cfg["family"] for cfg in DEPARTMENTS.values()}):
@@ -523,6 +766,123 @@ def seed(db):
                 planned_sessions=planned,
                 status="已完成" if done >= planned else "进行中",
                 start_date=date(2025, 2, 1),
+            )
+        )
+
+    # ---------- 人才发展：胜任力模型（等级行为 + 岗位要求） ----------
+    for comp in competencies.values():
+        for level, behavior in LEVEL_BEHAVIOR.items():
+            db.add(
+                CompetencyLevel(
+                    competency_id=comp.id,
+                    level=level,
+                    behavior=behavior,
+                    evidence=f"可观察证据：在 {comp.category} 类任务中表现出第 {level} 级行为",
+                )
+            )
+    db.flush()
+
+    for dept, cfg in DEPARTMENTS.items():
+        for level in cfg["levels"]:
+            picked = random.sample(list(competencies.values()), min(4, len(competencies)))
+            weights = [0.35, 0.25, 0.22, 0.18][: len(picked)]
+            for comp, weight in zip(picked, weights):
+                db.add(
+                    PositionCompetency(
+                        job_family=cfg["family"],
+                        job_level=level,
+                        competency_id=comp.id,
+                        required_level=min(5, max(3, 2 + _num_level(level))),
+                        weight=weight,
+                    )
+                )
+
+    # ---------- 人才发展：360 度评估 ----------
+    for emp in random.sample(employees, min(24, len(employees))):
+        base = random.uniform(2.8, 4.5)
+        for role in REVIEW_360_ROLES:
+            bias = {"自评": 0.45, "上级": -0.15, "同级": 0.0, "下级": 0.2}[role]
+            for dim in REVIEW_360_DIMENSIONS:
+                score = round(min(5.0, max(1.0, base + bias + random.uniform(-0.4, 0.4))), 1)
+                db.add(
+                    Review360(
+                        employee_id=emp.id,
+                        period="2025H1",
+                        rater_role=role,
+                        dimension=dim,
+                        score=score,
+                    )
+                )
+
+    # ---------- 人才发展：关键岗位与继任者计划 ----------
+    no_successor_idx = {2, 8}
+    for i, (title, dept, level, criticality, vacancy_risk) in enumerate(
+        KEY_POSITION_DEFS
+    ):
+        in_dept = [e for e in employees if e.department == dept]
+        incumbent = random.choice(in_dept) if in_dept else None
+        pos = KeyPosition(
+            title=title,
+            department=dept,
+            job_level=level,
+            incumbent_id=incumbent.id if incumbent else None,
+            criticality=criticality,
+            vacancy_risk=vacancy_risk,
+        )
+        db.add(pos)
+        db.flush()
+        if i in no_successor_idx:
+            continue
+        pool = [e for e in in_dept if e.id != pos.incumbent_id]
+        if not pool:
+            continue
+        for emp in random.sample(pool, min(random.choice([1, 2, 2, 3]), len(pool))):
+            db.add(
+                SuccessionCandidate(
+                    key_position_id=pos.id,
+                    candidate_id=emp.id,
+                    readiness=random.choice(
+                        ["ready_now", "ready_1y", "ready_1y", "ready_2y", "not_ready"]
+                    ),
+                    source=random.choices(["内部", "外部储备"], weights=[8, 2])[0],
+                    note=None,
+                )
+            )
+
+    # ---------- 人才发展：个人发展计划 IDP ----------
+    idp_goals = [
+        "一年内向技术经理角色过渡",
+        "补齐数据分析能力，支撑业务决策",
+        "提升跨部门协作效率，主导重点项目",
+        "强化团队领导能力，储备管理通道",
+        "深化专业纵深，走专家序列",
+        "完成一次跨部门轮岗历练",
+        "补齐商业敏感与客户沟通能力",
+        "建立系统化的问题解决方法论",
+    ]
+    for emp, goal in zip(random.sample(employees, min(12, len(employees))), idp_goals * 2):
+        comp = random.choice(list(competencies.values()))
+        bucket = random.choices(["70", "20", "10"], weights=[5, 3, 2])[0]
+        action_type = {
+            "70": random.choice(["项目", "轮岗"]),
+            "20": "导师",
+            "10": "培训",
+        }[bucket]
+        status = random.choices(
+            ["已完成", "进行中", "未开始"], weights=[4, 4, 2]
+        )[0]
+        db.add(
+            DevelopmentPlan(
+                employee_id=emp.id,
+                period="2025H1",
+                goal=goal,
+                competency_id=comp.id,
+                bucket=bucket,
+                action_type=action_type,
+                action_name=f"{comp.name}专项提升·{action_type}",
+                due_date=date(2025, random.choice([9, 10, 11, 12]), 28),
+                status=status,
+                progress=100 if status == "已完成" else random.randint(10, 80),
             )
         )
 

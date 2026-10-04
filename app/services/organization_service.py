@@ -1,23 +1,31 @@
 """核心域 · 组织发展（Organization Development）确定性计算。
 
-组织发展关注"组织如何长得好"，回答四个问题：
-    架构是否合理    组织单元的层级深度、管理幅度与编制达成
-    效能是否健康    人均产出、人工成本率与部门人效排名
-    职级是否畅通    职族职级的金字塔分布、晋升率与拥堵情况
-    变革是否可控    组织调整方案的影响人数与成本测算
+组织发展（OD）的对象是组织、团队、架构、机制与文化，覆盖六类工作：
 
-所有分档、比率与结论均由 Python 计算，大模型只负责把结论讲清楚。
+    组织诊断        健康度调研 + 组织扫描（7S / 6-BOX / 五维框架），定位痛点瓶颈
+    架构与管控设计  组织模式、权责划分、分权集权、层级优化、定岗定编
+    战略解码        公司战略 → 组织目标 → 部门目标的拆解与追踪
+    组织变革管理    扩张 / 并购 / 转型的推进节奏、阻力与影响测算
+    文化与氛围      价值观落地、组织氛围、员工敬业度
+    组织效能        人效与人力成本分析，输出组织层面改进方案
+
+所有分档、比率与结论均由 Python 计算，大模型只负责把结论讲清楚；
+每个结果都带 basis 字段，说明分数是怎么算出来的。
 """
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import (
+    CultureSurvey,
     Employee,
     JobArchitecture,
     OrgChange,
     OrgEffectiveness,
+    OrgHealthSurvey,
+    OrgScan,
     OrgUnit,
+    StrategicGoal,
 )
 
 # 编制达成率分档（下限，由高到低匹配）
@@ -103,6 +111,10 @@ def org_structure(
                 "gap": gap,
                 "fill_rate": fill_rate,
                 "status": status,
+                "org_model": u.org_model,
+                "control_mode": u.control_mode,
+                "authority": u.authority,
+                "decision_rights": u.decision_rights,
                 "advice": _fill_advice(status, gap, None),
             }
         )
@@ -145,13 +157,28 @@ def org_structure(
         "total_gap": max(0, total_planned - total_actual),
         "overall_fill_rate": overall,
         "shortage_units": [r for r in rows if r["status"] in ("缺口较大", "严重缺编")],
+        "org_model_distribution": _distribution(rows, "org_model"),
+        "control_mode_distribution": _distribution(rows, "control_mode"),
+        "authority_distribution": _distribution(rows, "authority"),
         "units": rows,
+        "basis": (
+            "编制达成率 = 在编 / 编制；平均管理幅度 = 一线单元在编人数均值；"
+            "层级深度 = max(level)"
+        ),
         "conclusion": (
             f"共 {len(rows)} 个组织单元，最深 {depth} 层，整体编制达成率 "
             f"{round(overall * 100, 1)}%（在编 {total_actual} / 编制 {total_planned}）。"
             f"{span_comment}{depth_comment}"
         ),
     }
+
+
+def _distribution(rows: list[dict], key: str) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for r in rows:
+        value = r.get(key) or "-"
+        result[value] = result.get(value, 0) + 1
+    return dict(sorted(result.items(), key=lambda kv: -kv[1]))
 
 
 # ---------------------------- 二、组织效能与人效 ----------------------------
@@ -393,6 +420,371 @@ def _architecture_advice(shape: str, avg_promo: float) -> str:
     return "职级结构健康，维持现有晋升节奏"
 
 
+# ---------------------------- 五、组织诊断 ----------------------------
+
+# 三种诊断框架的维度定义
+SCAN_FRAMEWORKS: dict[str, list[str]] = {
+    "seven_s": ["战略", "结构", "制度", "共同价值观", "风格", "人员", "技能"],
+    "six_box": ["使命目标", "组织", "关系", "激励", "领导", "支持"],
+    "five_dim": ["战略", "组织", "人才", "机制", "文化"],
+}
+
+FRAMEWORK_LABELS = {
+    "seven_s": "麦肯锡 7S",
+    "six_box": "Weisbord 6-BOX",
+    "five_dim": "五维诊断框架",
+}
+
+# 组织健康度调研维度
+HEALTH_DIMENSIONS = [
+    "战略清晰",
+    "组织架构",
+    "流程效率",
+    "人才供给",
+    "文化氛围",
+    "激励机制",
+    "协同效率",
+]
+
+
+def org_diagnosis(
+    db: Session,
+    department: str | None = None,
+    period: str | None = None,
+    framework: str | None = None,
+) -> dict:
+    """组织诊断：健康度调研 + 组织扫描（7S / 6-BOX / 五维框架）。
+
+    输出组织健康分、分维度差距、已识别痛点与瓶颈排序。
+    """
+    # ---------- 1. 组织健康度调研 ----------
+    stmt = select(OrgHealthSurvey)
+    if department:
+        stmt = stmt.where(OrgHealthSurvey.department == department)
+    if period:
+        stmt = stmt.where(OrgHealthSurvey.period == period)
+    surveys = list(db.execute(stmt).scalars().all())
+
+    health_rows = []
+    if surveys:
+        by_dim: dict[str, list[OrgHealthSurvey]] = {}
+        for s in surveys:
+            by_dim.setdefault(s.dimension, []).append(s)
+        for dim, items in sorted(by_dim.items()):
+            score = round(sum(i.score for i in items) / len(items), 2)
+            benchmark = round(sum(i.benchmark for i in items) / len(items), 2)
+            gap = round(score - benchmark, 2)
+            if gap <= -0.5:
+                level = "明显短板"
+            elif gap < 0:
+                level = "低于基准"
+            elif gap < 0.3:
+                level = "基本达标"
+            else:
+                level = "优于基准"
+            health_rows.append(
+                {
+                    "dimension": dim,
+                    "score": score,
+                    "benchmark": benchmark,
+                    "gap": gap,
+                    "level": level,
+                    "sample": sum(i.sample for i in items),
+                    "advice": _health_advice(dim, level),
+                }
+            )
+        health_rows.sort(key=lambda x: x["gap"])
+        health_score = round(sum(r["score"] for r in health_rows) / len(health_rows), 2)
+    else:
+        health_score = 0.0
+
+    # ---------- 2. 组织扫描 ----------
+    scan_stmt = select(OrgScan)
+    if department:
+        scan_stmt = scan_stmt.where(OrgScan.department == department)
+    if period:
+        scan_stmt = scan_stmt.where(OrgScan.period == period)
+    if framework:
+        scan_stmt = scan_stmt.where(OrgScan.framework == framework)
+    scans = list(db.execute(scan_stmt).scalars().all())
+
+    scan_rows = []
+    for s in scans:
+        gap = round(s.current_score - s.target_score, 2)
+        scan_rows.append(
+            {
+                "framework": s.framework,
+                "framework_label": FRAMEWORK_LABELS.get(s.framework, s.framework),
+                "department": s.department,
+                "dimension": s.dimension,
+                "current_score": s.current_score,
+                "target_score": s.target_score,
+                "gap": gap,
+                "issue": s.issue,
+                "owner": s.owner or "-",
+                "severity": _severity(gap),
+            }
+        )
+    scan_rows.sort(key=lambda x: x["gap"])
+
+    bottlenecks = [r for r in scan_rows if r["gap"] <= -1.0]
+    pain_points = [r for r in health_rows if r["level"] == "明显短板"]
+
+    if not health_rows and not scan_rows:
+        return {"error": "当前条件下没有组织诊断数据。", "total": 0}
+
+    if health_score >= 4.2:
+        health_level = "健康"
+    elif health_score >= 3.6:
+        health_level = "基本健康"
+    elif health_score >= 3.0:
+        health_level = "亚健康"
+    else:
+        health_level = "预警"
+
+    return {
+        "department": department or "全部部门",
+        "period": period or (surveys[0].period if surveys else "-"),
+        "framework": framework or "全部框架",
+        "org_health_score": health_score,
+        "org_health_level": health_level,
+        "health_dimensions": health_rows,
+        "pain_points": pain_points,
+        "scan_total": len(scan_rows),
+        "scan_results": scan_rows,
+        "bottlenecks": bottlenecks,
+        "basis": (
+            "健康分 = 各维度调研均分的平均值；维度差距 = 实际分 − 行业基准；"
+            "扫描差距 = 现状分 − 目标分，≤ −1.0 判定为瓶颈"
+        ),
+        "conclusion": (
+            f"组织健康分 {health_score}（{health_level}）。"
+            + (
+                f"明显短板维度 {len(pain_points)} 项："
+                f"{'、'.join(p['dimension'] for p in pain_points)}。"
+                if pain_points
+                else "各维度均不低于行业基准。"
+            )
+            + (
+                f"组织扫描 {len(scan_rows)} 项，其中 {len(bottlenecks)} 项为瓶颈，"
+                f"最需优先解决“{bottlenecks[0]['dimension']}”（{bottlenecks[0]['issue']}）。"
+                if bottlenecks
+                else "组织扫描未发现显著瓶颈。"
+            )
+        ),
+    }
+
+
+def _severity(gap: float) -> str:
+    if gap <= -1.5:
+        return "严重瓶颈"
+    if gap <= -1.0:
+        return "瓶颈"
+    if gap < 0:
+        return "有差距"
+    return "达标"
+
+
+def _health_advice(dimension: str, level: str) -> str:
+    if level in ("优于基准", "基本达标"):
+        return f"{dimension}表现良好，可沉淀做法横向复制"
+    base = {
+        "战略清晰": "战略未有效传递到一线，建议做一次战略解码与目标对齐",
+        "组织架构": "架构与业务不匹配，建议复盘部门设置与汇报线",
+        "流程效率": "流程节点冗余，建议梳理核心流程并压缩审批层级",
+        "人才供给": "关键岗位供给不足，建议启动继任与梯队建设",
+        "文化氛围": "组织氛围偏弱，建议加强管理者的团队建设动作",
+        "激励机制": "激励与贡献不匹配，建议复盘绩效与薪酬联动机制",
+        "协同效率": "跨部门协同成本高，建议明确接口职责与协同机制",
+    }.get(dimension, "该维度低于基准，建议专项复盘")
+    return f"{'明显短板：' if level == '明显短板' else ''}{base}"
+
+
+# ---------------------------- 六、战略解码 ----------------------------
+
+
+def strategy_decode(
+    db: Session, department: str | None = None, period: str | None = None
+) -> dict:
+    """战略解码：公司战略 → 组织目标 → 部门目标的拆解与达成追踪。"""
+    stmt = select(StrategicGoal)
+    if period:
+        stmt = stmt.where(StrategicGoal.period == period)
+    if department:
+        stmt = stmt.where(StrategicGoal.owner_department == department)
+    goals = list(db.execute(stmt).scalars().all())
+
+    if not goals:
+        return {"error": "当前条件下没有战略解码数据。", "total": 0}
+
+    by_level: dict[str, list[dict]] = {"公司": [], "组织": [], "部门": []}
+    for g in goals:
+        achievement = round(g.current_value / g.target_value, 3) if g.target_value else 0.0
+        if achievement >= 1.0:
+            status_flag = "已达成"
+        elif achievement >= 0.8:
+            status_flag = "进展良好"
+        elif achievement >= 0.6:
+            status_flag = "有风险"
+        else:
+            status_flag = "严重滞后"
+        row = {
+            "id": g.id,
+            "level": g.level,
+            "name": g.name,
+            "owner_department": g.owner_department or "-",
+            "metric": g.metric,
+            "target_value": g.target_value,
+            "current_value": g.current_value,
+            "achievement": achievement,
+            "weight": g.weight,
+            "status": g.status,
+            "flag": status_flag,
+        }
+        by_level.setdefault(g.level, []).append(row)
+
+    for rows in by_level.values():
+        rows.sort(key=lambda x: x["achievement"])
+
+    all_rows = [r for rows in by_level.values() for r in rows]
+    # 加权达成率：权重归一化后按达成率加权
+    total_weight = sum(r["weight"] for r in all_rows) or 1.0
+    weighted = round(
+        sum(r["achievement"] * r["weight"] for r in all_rows) / total_weight, 3
+    )
+
+    # 承接检查：部门目标是否都有上级目标
+    parent_ids = {g.id for g in goals}
+    orphan = [
+        r
+        for r in all_rows
+        if r["level"] == "部门"
+        and not any(
+            g.id == r["id"] and g.parent_id in parent_ids
+            for g in goals
+            if g.id == r["id"]
+        )
+    ]
+
+    lagging = [r for r in all_rows if r["flag"] in ("有风险", "严重滞后")]
+
+    return {
+        "department": department or "全部部门",
+        "period": period or (goals[0].period if goals else "-"),
+        "total": len(all_rows),
+        "company_goals": by_level.get("公司", []),
+        "org_goals": by_level.get("组织", []),
+        "department_goals": by_level.get("部门", []),
+        "weighted_achievement": weighted,
+        "lagging_goals": lagging,
+        "unaligned_goals": orphan,
+        "basis": (
+            "目标达成率 = 当前值 / 目标值；加权达成率 = Σ(达成率 × 权重) / Σ权重；"
+            "≥1.0 已达成，≥0.8 进展良好，≥0.6 有风险，否则严重滞后"
+        ),
+        "conclusion": (
+            f"共 {len(all_rows)} 个目标（公司 {len(by_level.get('公司', []))} / "
+            f"组织 {len(by_level.get('组织', []))} / 部门 {len(by_level.get('部门', []))}），"
+            f"加权达成率 {round(weighted * 100, 1)}%。"
+            + (
+                f"其中 {len(lagging)} 个目标进展落后，最需关注的是"
+                f"“{lagging[0]['name']}”（达成 {round(lagging[0]['achievement'] * 100, 1)}%）。"
+                if lagging
+                else "各层级目标进展正常。"
+            )
+        ),
+    }
+
+
+# ---------------------------- 七、文化与组织氛围 ----------------------------
+
+
+def org_culture(
+    db: Session, department: str | None = None, period: str | None = None
+) -> dict:
+    """企业文化与组织氛围：价值观落地、氛围感知与敬业度。"""
+    stmt = select(CultureSurvey)
+    if department:
+        stmt = stmt.where(CultureSurvey.department == department)
+    if period:
+        stmt = stmt.where(CultureSurvey.period == period)
+    records = list(db.execute(stmt).scalars().all())
+
+    if not records:
+        return {"error": "当前条件下没有文化与氛围调研数据。", "total": 0}
+
+    by_dim: dict[str, list[CultureSurvey]] = {}
+    for r in records:
+        by_dim.setdefault(r.dimension, []).append(r)
+
+    rows = []
+    for dim, items in sorted(by_dim.items()):
+        score = round(sum(i.score for i in items) / len(items), 2)
+        if score >= 4.2:
+            level = "氛围优良"
+        elif score >= 3.6:
+            level = "健康"
+        elif score >= 3.0:
+            level = "需关注"
+        else:
+            level = "预警"
+        initiative = next((i.initiative for i in items if i.initiative), "")
+        rows.append(
+            {
+                "dimension": dim,
+                "score": score,
+                "sample": sum(i.sample for i in items),
+                "level": level,
+                "initiative": initiative,
+                "advice": _culture_advice(dim, level, initiative),
+            }
+        )
+    rows.sort(key=lambda x: x["score"])
+
+    overall = round(sum(r["score"] for r in rows) / len(rows), 2)
+    weak = [r for r in rows if r["level"] in ("需关注", "预警")]
+
+    return {
+        "department": department or "全部部门",
+        "period": period or (records[0].period if records else "-"),
+        "total_dimensions": len(rows),
+        "overall_score": overall,
+        "engagement_score": next(
+            (r["score"] for r in rows if r["dimension"] == "敬业度"), None
+        ),
+        "dimensions": rows,
+        "weak_dimensions": weak,
+        "basis": (
+            "维度分 = 该维度调研均分（1-5）；≥4.2 优良，≥3.6 健康，"
+            "≥3.0 需关注，否则预警"
+        ),
+        "conclusion": (
+            f"文化与氛围整体得分 {overall}，"
+            + (
+                f"其中 {len(weak)} 个维度需关注："
+                f"{'、'.join(r['dimension'] for r in weak)}，"
+                f"建议优先推进对应文化举措。"
+                if weak
+                else "各维度均处于健康及以上水平。"
+            )
+        ),
+    }
+
+
+def _culture_advice(dimension: str, level: str, initiative: str) -> str:
+    base = {
+        "价值观认同": "价值观停留在口号，建议纳入管理者考核与晋升标准",
+        "协作氛围": "部门墙较厚，建议设置跨部门共同目标与联合激励",
+        "心理安全": "员工不敢表达异议，建议建立匿名反馈与无责复盘机制",
+        "管理风格": "管理风格偏命令式，建议开展管理者辅导式领导力训练",
+        "成长空间": "员工看不到成长路径，建议打通任职资格与发展通道",
+        "敬业度": "敬业度偏低，建议先解决直接主管与激励认可问题",
+    }.get(dimension, "该维度偏低，建议专项调研定位成因")
+    if initiative:
+        return f"{base}；已配举措：{initiative}"
+    return base
+
+
 # ---------------------------- 四、组织变革模拟 ----------------------------
 
 
@@ -434,10 +826,15 @@ def org_change_simulation(
                 "cost_impact": cost,
                 "cost_per_head": per_head,
                 "status": p.status,
+                "stage": p.stage,
+                "stage_index": STAGE_ORDER.get(p.stage, 0),
+                "resistance": p.resistance,
+                "resistance_source": p.resistance_source or "",
                 "risk": risk,
                 "target_date": str(p.target_date) if p.target_date else "-",
                 "note": p.note or "",
                 "advice": _change_advice(p.change_type, risk, affected),
+                "resistance_advice": _resistance_advice(p.resistance, p.stage),
             }
         )
 
@@ -447,6 +844,7 @@ def org_change_simulation(
     total_cost = round(sum(r["cost_impact"] for r in rows), 2)
     pending = [r for r in rows if r["status"] != "已完成"]
     high = [r for r in rows if r["risk"] == "高影响"]
+    blocked = [r for r in rows if r["resistance"] == "高" and r["status"] != "已完成"]
 
     return {
         "department": department or "全部部门",
@@ -455,7 +853,13 @@ def org_change_simulation(
         "total_cost_impact": total_cost,
         "pending_count": len(pending),
         "high_impact_plans": high,
+        "high_resistance_plans": blocked,
+        "stage_distribution": _distribution(rows, "stage"),
         "plans": rows,
+        "basis": (
+            "影响分级：≥30 人高影响，≥10 人中影响；"
+            "变革阶段：宣贯 → 试点 → 推广 → 固化；阻力等级高/中/低"
+        ),
         "conclusion": (
             f"共 {len(rows)} 个组织变革方案，累计影响 {total_affected} 人，"
             f"成本影响 {total_cost} 万元。"
@@ -465,8 +869,25 @@ def org_change_simulation(
                 if high
                 else "暂无高影响方案，可按计划推进。"
             )
+            + (
+                f"另有 {len(blocked)} 个方案变革阻力为高，"
+                f"需优先处理阻力来源再推进。"
+                if blocked
+                else ""
+            )
         ),
     }
+
+
+STAGE_ORDER = {"宣贯": 1, "试点": 2, "推广": 3, "固化": 4}
+
+
+def _resistance_advice(resistance: str, stage: str) -> str:
+    if resistance == "高":
+        return f"阻力高且当前处于{stage}阶段，建议高管站台宣贯 + 关键人群一对一沟通"
+    if resistance == "中":
+        return "存在一定阻力，建议在试点阶段收集反馈并快速调整方案"
+    return "阻力较低，按既定节奏推进即可"
 
 
 def _change_advice(change_type: str, risk: str, affected: int) -> str:
@@ -477,6 +898,8 @@ def _change_advice(change_type: str, risk: str, affected: int) -> str:
         "缩编": "缩编需配套安置方案与合规流程，优先内部转岗",
         "新设": "新设单元需先明确定位与编制，再启动招聘",
         "调整": "调整方案需明确新旧职责切换时点与过渡安排",
+        "并购": "并购需先完成组织架构映射与关键人才保留方案",
+        "转型": "转型需配套能力重塑计划，避免只改架构不改能力",
     }.get(change_type, "变更前完成影响评估与沟通计划")
     if risk == "高影响":
         return f"{base}；影响 {affected} 人，建议高管牵头并设专项沟通窗口"
@@ -486,6 +909,9 @@ def _change_advice(change_type: str, risk: str, affected: int) -> str:
 __all__ = [
     "job_architecture",
     "org_change_simulation",
+    "org_culture",
+    "org_diagnosis",
     "org_effectiveness",
     "org_structure",
+    "strategy_decode",
 ]

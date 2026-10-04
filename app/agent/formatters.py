@@ -859,18 +859,254 @@ def format_attrition(result: dict) -> str:
     return "\n".join(lines)
 
 
+def format_od_diagnosis(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无组织诊断数据")
+
+    lines = [
+        f"组织诊断 · {result['department']}（{result['period']}｜{result['framework']}）",
+        f"组织健康分 {result['org_health_score']}（{result['org_health_level']}）",
+        "",
+        "健康度维度（按差距排序）：",
+    ]
+    lines += _bullets(
+        result.get("health_dimensions", []),
+        lambda r: f"{r['dimension']}：{r['score']} / 基准 {r['benchmark']}，"
+        f"差 {r['gap']}（{r['level']}）—— {r['advice']}",
+    )
+    bottlenecks = result.get("bottlenecks") or []
+    if bottlenecks:
+        lines += ["", "组织扫描瓶颈："]
+        lines += _bullets(
+            bottlenecks,
+            lambda r: f"[{r['framework_label']}] {r['dimension']}：现 "
+            f"{r['current_score']} / 目标 {r['target_score']}，{r['severity']}"
+            f"｜{r['issue']}（责任方 {r['owner']}）",
+        )
+    lines += ["", "计算依据：" + result["basis"], "结论：" + result["conclusion"]]
+    return _line(lines)
+
+
+def format_od_strategy(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无战略解码数据")
+
+    lines = [
+        f"战略解码 · {result['department']}（{result['period']}）",
+        f"共 {result['total']} 个目标，加权达成率 "
+        f"{round(result['weighted_achievement'] * 100, 1)}%",
+        "",
+        "公司级目标：",
+    ]
+    lines += _bullets(
+        result.get("company_goals", []),
+        lambda r: f"{r['name']}（{r['metric']}）：{r['current_value']} / "
+        f"{r['target_value']}，达成 {round(r['achievement'] * 100, 1)}% —— {r['flag']}",
+    ) or ["  暂无"]
+    lines += ["", "部门级目标（最落后的前 5 项）："]
+    lines += _bullets(
+        (result.get("department_goals") or [])[:5],
+        lambda r: f"{r['name']}（{r['owner_department']}）：达成 "
+        f"{round(r['achievement'] * 100, 1)}% —— {r['flag']}",
+    ) or ["  暂无"]
+    lines += ["", "计算依据：" + result["basis"], "结论：" + result["conclusion"]]
+    return _line(lines)
+
+
+def format_od_culture(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无文化与氛围数据")
+
+    lines = [
+        f"企业文化与组织氛围 · {result['department']}（{result['period']}）",
+        f"整体得分 {result['overall_score']}"
+        + (
+            f"，敬业度 {result['engagement_score']}"
+            if result.get("engagement_score")
+            else ""
+        ),
+        "",
+        "维度得分（由低到高）：",
+    ]
+    lines += _bullets(
+        result.get("dimensions", []),
+        lambda r: f"{r['dimension']}：{r['score']}（样本 {r['sample']} 人）"
+        f"—— {r['level']}",
+    )
+    weak = result.get("weak_dimensions") or []
+    if weak:
+        lines += ["", "需关注维度的改进建议："]
+        lines += _bullets(weak, lambda r: f"{r['dimension']} —— {r['advice']}")
+    lines += ["", "计算依据：" + result["basis"], "结论：" + result["conclusion"]]
+    return _line(lines)
+
+
+def format_td_review(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无人才盘点数据")
+
+    lines = [
+        f"人才盘点 · {result['department']}（{result['period']}）",
+        f"参与 {result['total']} 人，高潜 {result['high_potential_count']} 人，"
+        f"待优化 {result['low_performer_count']} 人",
+        "",
+        "九宫格分布（行=绩效 高→低，列=潜力 低→高）：",
+    ]
+    for row in result.get("grid_matrix", []):
+        cells = " | ".join(f"{c['grid']} {c['count']}人" for c in row)
+        lines.append(f"  {row[0]['performance_band']}绩效： {cells}")
+
+    lines += ["", "高潜名单："]
+    lines += _bullets(
+        result.get("high_potential", [])[:8],
+        lambda r: f"{r['name']}（{r['department']}·{r['job_level']}）绩效 "
+        f"{r['performance']} / 潜力 {r['potential']} —— {r['grid_name']}",
+    ) or ["  暂无高潜人员"]
+
+    lines += ["", "待优化人员："]
+    lines += _bullets(
+        result.get("low_performers", [])[:5],
+        lambda r: f"{r['name']}（{r['department']}·{r['job_level']}）绩效 "
+        f"{r['performance']} / 潜力 {r['potential']}",
+    ) or ["  暂无"]
+
+    issues = result.get("cognition_issues") or []
+    if issues:
+        lines += ["", "360 认知偏差（自评 vs 他人）："]
+        lines += _bullets(
+            issues,
+            lambda r: f"{r['name']}：自评 {r['self_score']} / 他人 "
+            f"{r['others_avg']}，差 {r['cognition_gap']} —— {r['cognition']}",
+        )
+    lines += ["", "计算依据：" + result["basis"], "结论：" + result["conclusion"]]
+    return _line(lines)
+
+
+def format_td_model(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无胜任力模型数据")
+
+    lines = [
+        f"胜任力模型 · {result['job_family']} / {result['job_level']}",
+        f"能力项 {result['total_competencies']} 个，等级行为描述 "
+        f"{result['total_level_definitions']} 条，"
+        f"岗位要求覆盖 {round(result['requirement_coverage'] * 100, 1)}%",
+        "",
+        "岗位能力要求：",
+    ]
+    lines += _bullets(
+        result.get("position_requirements", [])[:10],
+        lambda r: f"{r['competency']}：要求 {r['required_level']} 级（权重 "
+        f"{r['weight']}）{(r['behavior'][:30] + '…') if r['behavior'] else ''}",
+    ) or ["  暂无岗位能力要求配置"]
+
+    gap = result.get("employee_gap")
+    if gap:
+        lines += [
+            "",
+            f"员工对照 · {gap['employee']}（{gap['job_level']}）：符合度 "
+            f"{round(gap['fit_rate'] * 100, 1)}%（{gap['fit_label']}）",
+        ]
+        lines += _bullets(
+            gap["items"],
+            lambda r: f"{r['competency']}：现 {r['current']} / 需 {r['required']}",
+        )
+    lines += ["", "计算依据：" + result["basis"], "结论：" + result["conclusion"]]
+    return _line(lines)
+
+
+def format_td_succession(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无继任计划数据")
+
+    lines = [
+        f"继任者计划 · {result['department']}",
+        f"关键岗位 {result['total']} 个，覆盖率 "
+        f"{round(result['coverage_rate'] * 100, 1)}%，立即就绪率 "
+        f"{round(result['ready_now_rate'] * 100, 1)}%，平均梯队深度 "
+        f"{result['avg_depth']} 人",
+        "",
+        "风险岗位：",
+    ]
+    lines += _bullets(
+        result.get("risk_positions", []),
+        lambda r: f"{r['title']}（{r['department']}·{r['criticality']}重要）—— {r['risk']}",
+    ) or ["  各关键岗位均已配置继任人选"]
+
+    lines += ["", "岗位明细："]
+    lines += _bullets(
+        result.get("positions", [])[:8],
+        lambda r: f"{r['title']}（在岗 {r['incumbent']}）：{r['candidate_count']} 名候选人"
+        f"（立即就绪 {r['ready_now_count']}），{r['risk']} —— {r['advice']}",
+    )
+    lines += ["", "计算依据：" + result["basis"], "结论：" + result["conclusion"]]
+    return _line(lines)
+
+
+def format_td_idp(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无个人发展计划数据")
+
+    bucket = result.get("by_70_20_10") or {}
+    lines = [
+        f"个人发展计划 IDP · {result['department']}（{result['period']}）",
+        f"{result['total_people']} 人制定了计划，共 {result['total_actions']} 个行动项，"
+        f"完成率 {round(result['overall_completion_rate'] * 100, 1)}%",
+        f"70-20-10 分布：在职历练 {bucket.get('70', 0)} / "
+        f"他人辅导 {bucket.get('20', 0)} / 正式培训 {bucket.get('10', 0)}",
+        "",
+        "人员进度：",
+    ]
+    lines += _bullets(
+        result.get("people", [])[:8],
+        lambda r: f"{r['employee']}（{r['department']}·{r['job_level']}）："
+        f"{r['completed_count']}/{r['action_count']} 项完成，"
+        f"平均进度 {r['avg_progress']}%｜目标：{r['goal']}",
+    )
+    lines += ["", "计算依据：" + result["basis"], "结论：" + result["conclusion"]]
+    return _line(lines)
+
+
+def format_td_placement(result: dict) -> str:
+    if not result or result.get("error"):
+        return result.get("error", "暂无任用建议数据")
+
+    lines = [f"人才任用建议 · {result['department']}", f"共评估 {result['total']} 人", ""]
+    for g in result.get("groups", []):
+        if not g["count"]:
+            continue
+        lines.append(f"{g['suggestion']}（{g['count']} 人）：")
+        for p in g["people"][:5]:
+            match = f"{round(p['match_rate'] * 100, 1)}%" if p.get("match_rate") else "-"
+            lines.append(
+                f"  - {p['name']}（{p['department']}·{p['job_level']}）"
+                f"{p['grid_name']}，匹配度 {match}｜{p['action']}"
+            )
+        lines.append("")
+    lines += ["计算依据：" + result["basis"], "结论：" + result["conclusion"]]
+    return _line(lines)
+
+
 FORMATTERS = {
     # 核心域 · 组织发展
     "OD_STRUCTURE": format_od_structure,
     "OD_EFFECTIVENESS": format_od_effectiveness,
     "OD_ARCHITECTURE": format_od_architecture,
     "OD_CHANGE": format_od_change,
+    "OD_DIAGNOSIS": format_od_diagnosis,
+    "OD_STRATEGY": format_od_strategy,
+    "OD_CULTURE": format_od_culture,
     # 核心域 · 人才发展
     "TD_COMPETENCY": format_td_competency,
     "TD_STANDARD": format_td_standard,
     "TD_POOL": format_td_pool,
     "TD_PROGRAM": format_td_program,
     "TD_MENTORSHIP": format_td_mentorship,
+    "TD_REVIEW": format_td_review,
+    "TD_MODEL": format_td_model,
+    "TD_SUCCESSION": format_td_succession,
+    "TD_IDP": format_td_idp,
+    "TD_PLACEMENT": format_td_placement,
     # HRIS · 招聘管理
     "HRIS_RECRUITMENT_SCREEN": format_ats_screen,
     "HRIS_RECRUITMENT_FUNNEL": format_ats_funnel,

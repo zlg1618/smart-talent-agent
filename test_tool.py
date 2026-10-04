@@ -147,6 +147,126 @@ def main():
         print("结论：" + mentor["conclusion"])
 
         print()
+        print("=" * 60)
+        print("10. 组织发展 · 组织诊断")
+        print("=" * 60)
+        diag = organization_service.org_diagnosis(db)
+        print(
+            f"组织健康分 {diag['org_health_score']}（{diag['org_health_level']}），"
+            f"扫描 {diag['scan_total']} 项，瓶颈 {len(diag['bottlenecks'])} 项"
+        )
+        for r in diag["health_dimensions"][:4]:
+            print(
+                f"  - {r['dimension']}：{r['score']} / 基准 {r['benchmark']}，{r['level']}"
+            )
+        for r in diag["bottlenecks"][:3]:
+            print(f"  ! [{r['framework_label']}] {r['dimension']}：{r['issue']}")
+        print("结论：" + diag["conclusion"])
+
+        print()
+        print("=" * 60)
+        print("11. 组织发展 · 战略解码")
+        print("=" * 60)
+        strategy = organization_service.strategy_decode(db)
+        print(
+            f"目标 {strategy['total']} 个，加权达成率 "
+            f"{round(strategy['weighted_achievement'] * 100, 1)}%"
+        )
+        for r in strategy["lagging_goals"][:4]:
+            print(
+                f"  - {r['name']}（{r['owner_department']}）："
+                f"{round(r['achievement'] * 100, 1)}%，{r['flag']}"
+            )
+        print("结论：" + strategy["conclusion"])
+
+        print()
+        print("=" * 60)
+        print("12. 组织发展 · 文化与组织氛围")
+        print("=" * 60)
+        culture = organization_service.org_culture(db)
+        print(f"整体得分 {culture['overall_score']}，维度 {culture['total_dimensions']} 个")
+        for r in culture["dimensions"][:6]:
+            print(f"  - {r['dimension']}：{r['score']}（{r['level']}）")
+        print("结论：" + culture["conclusion"])
+
+        print()
+        print("=" * 60)
+        print("13. 人才发展 · 人才盘点（九宫格 + 360）")
+        print("=" * 60)
+        review = talent_development_service.talent_review(db)
+        print(
+            f"参与 {review['total']} 人，高潜 {review['high_potential_count']} 人，"
+            f"待优化 {review['low_performer_count']} 人"
+        )
+        for row in review["grid_matrix"]:
+            print(
+                "  绩效"
+                + row[0]["performance_band"]
+                + "："
+                + " | ".join(f"{c['grid']} {c['count']}" for c in row)
+            )
+        for r in review["high_potential"][:4]:
+            print(
+                f"  高潜：{r['name']}（{r['department']}·{r['job_level']}）"
+                f"绩效 {r['performance']} / 潜力 {r['potential']}"
+            )
+        for r in review["cognition_issues"][:3]:
+            print(
+                f"  360 偏差：{r['name']} 自评 {r['self_score']} / 他人 "
+                f"{r['others_avg']}，{r['cognition']}"
+            )
+        print("结论：" + review["conclusion"])
+
+        print()
+        print("=" * 60)
+        print("14. 人才发展 · 胜任力模型")
+        print("=" * 60)
+        model = talent_development_service.competency_model(db)
+        print(
+            f"能力项 {model['total_competencies']} 个，等级描述 "
+            f"{model['total_level_definitions']} 条，覆盖 "
+            f"{round(model['requirement_coverage'] * 100, 1)}%"
+        )
+        for r in model["position_requirements"][:5]:
+            print(f"  - {r['competency']}：要求 {r['required_level']} 级")
+        print("结论：" + model["conclusion"])
+
+        print()
+        print("=" * 60)
+        print("15. 人才发展 · 继任者计划与梯队")
+        print("=" * 60)
+        succ = talent_development_service.succession_plan(db)
+        print(
+            f"关键岗位 {succ['total']} 个，覆盖率 "
+            f"{round(succ['coverage_rate'] * 100, 1)}%，平均深度 {succ['avg_depth']} 人"
+        )
+        for r in succ["risk_positions"][:4]:
+            print(f"  ! {r['title']}（{r['department']}）—— {r['risk']}")
+        print("结论：" + succ["conclusion"])
+
+        print()
+        print("=" * 60)
+        print("16. 人才发展 · 个人发展计划 IDP")
+        print("=" * 60)
+        idp = talent_development_service.idp_view(db)
+        print(
+            f"{idp['total_people']} 人制定计划，{idp['total_actions']} 个行动项，"
+            f"完成率 {round(idp['overall_completion_rate'] * 100, 1)}%"
+        )
+        print(f"70-20-10：{idp['by_70_20_10']}")
+        print("结论：" + idp["conclusion"])
+
+        print()
+        print("=" * 60)
+        print("17. 人才发展 · 人才任用建议")
+        print("=" * 60)
+        place = talent_development_service.talent_placement(db)
+        print(f"共评估 {place['total']} 人")
+        for g in place["groups"]:
+            print(f"  - {g['suggestion']}：{g['count']} 人")
+        print("结论：" + place["conclusion"])
+
+        print()
         print("全部核心双域 Tool 测试通过。")
     finally:
         db.close()

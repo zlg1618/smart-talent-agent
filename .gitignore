@@ -10,3 +10,8 @@ venv/
 *.sqlite3
 talent_agent.db
 .pytest_cache/
+
+# 临时脚本与输出
+_rebuild_readme.py
+_fix_readme.py
+smoke_out.txt

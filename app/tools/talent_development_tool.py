@@ -92,10 +92,82 @@ def run_mentorship(
     )
 
 
+def run_talent_review(
+    db: Session,
+    message: str,
+    department: str | None = None,
+    period: str | None = None,
+    job_level: str | None = None,
+) -> dict:
+    return talent_development_service.talent_review(
+        db,
+        department=department or _find_department(db, message),
+        period=period,
+        job_level=job_level,
+    )
+
+
+def run_competency_model(
+    db: Session,
+    message: str,
+    employee_name: str | None = None,
+    job_family: str | None = None,
+    job_level: str | None = None,
+) -> dict:
+    return talent_development_service.competency_model(
+        db, job_family=job_family, job_level=job_level, employee_name=employee_name
+    )
+
+
+def run_succession(
+    db: Session, message: str, department: str | None = None
+) -> dict:
+    criticality = None
+    for level in ("高", "中", "低"):
+        if f"{level}重要" in message or f"重要级别{level}" in message:
+            criticality = level
+            break
+    return talent_development_service.succession_plan(
+        db, department=department or _find_department(db, message),
+        criticality=criticality,
+    )
+
+
+def run_idp(
+    db: Session,
+    message: str,
+    employee_name: str | None = None,
+    department: str | None = None,
+    period: str | None = None,
+) -> dict:
+    return talent_development_service.idp_view(
+        db,
+        employee_name=employee_name,
+        department=department or _find_department(db, message),
+        period=period,
+    )
+
+
+def run_talent_placement(
+    db: Session,
+    message: str,
+    department: str | None = None,
+    period: str | None = None,
+) -> dict:
+    return talent_development_service.talent_placement(
+        db, department=department or _find_department(db, message), period=period
+    )
+
+
 __all__ = [
+    "run_competency_model",
     "run_competency_profile",
     "run_development_program",
+    "run_idp",
     "run_mentorship",
+    "run_succession",
+    "run_talent_placement",
     "run_talent_pool",
+    "run_talent_review",
     "run_talent_standard_match",
 ]

@@ -66,9 +66,60 @@ def run_org_change(
     )
 
 
+FRAMEWORK_KEYWORDS = {
+    "seven_s": ["7S", "7s", "麦肯锡", "七要素"],
+    "six_box": ["6-box", "6-BOX", "6box", "六盒", "韦斯伯德"],
+    "five_dim": ["五维", "五个维度"],
+}
+
+
+def run_org_diagnosis(
+    db: Session,
+    message: str,
+    department: str | None = None,
+    period: str | None = None,
+) -> dict:
+    framework = None
+    for key, words in FRAMEWORK_KEYWORDS.items():
+        if any(w in message for w in words):
+            framework = key
+            break
+    return organization_service.org_diagnosis(
+        db,
+        department=department or _find_department(db, message),
+        period=period,
+        framework=framework,
+    )
+
+
+def run_strategy_decode(
+    db: Session,
+    message: str,
+    department: str | None = None,
+    period: str | None = None,
+) -> dict:
+    return organization_service.strategy_decode(
+        db, department=department or _find_department(db, message), period=period
+    )
+
+
+def run_org_culture(
+    db: Session,
+    message: str,
+    department: str | None = None,
+    period: str | None = None,
+) -> dict:
+    return organization_service.org_culture(
+        db, department=department or _find_department(db, message), period=period
+    )
+
+
 __all__ = [
     "run_job_architecture",
     "run_org_change",
+    "run_org_culture",
+    "run_org_diagnosis",
     "run_org_effectiveness",
     "run_org_structure",
+    "run_strategy_decode",
 ]

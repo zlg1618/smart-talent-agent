@@ -62,22 +62,33 @@ HRIS_MODULES = {
     "workforce": "workforce",
 }
 
-# 组织发展域内部动作关键词
+# 组织发展域内部动作关键词（顺序即优先级）
 OD_ACTION_KEYWORDS = [
-    ("CHANGE", ["组织变革", "变革", "合并", "拆分", "分拆", "扩编", "缩编", "新设", "重组", "调整"]),
+    ("DIAGNOSIS", ["组织诊断", "诊断", "健康度", "痛点", "瓶颈", "组织扫描",
+                   "7S", "7s", "6-BOX", "6-box", "六盒", "五维"]),
+    ("CULTURE", ["文化", "氛围", "敬业度", "价值观", "心理安全"]),
+    ("STRATEGY", ["战略解码", "战略", "目标拆解", "目标对齐", "解码"]),
+    ("CHANGE", ["组织变革", "变革", "合并", "拆分", "分拆", "扩编", "缩编",
+                "新设", "重组", "并购", "转型", "调整"]),
     ("ARCHITECTURE", ["职级", "职族", "晋升率", "晋升通道", "金字塔", "带宽"]),
     ("EFFECTIVENESS", ["人效", "效能", "人均产出", "人工成本", "成本率"]),
-    ("STRUCTURE", ["架构", "组织单元", "编制", "层级", "管理幅度", "汇报线"]),
+    ("STRUCTURE", ["架构", "组织单元", "编制", "层级", "管理幅度", "汇报线", "管控", "权责"]),
 ]
 
-# 人才发展域内部动作关键词
+# 人才发展域内部动作关键词（顺序即优先级）
 TD_ACTION_KEYWORDS = [
     ("MENTORSHIP", ["导师", "带教", "师徒"]),
-    ("PROGRAM", ["发展项目", "培养项目", "行动学习", "训练营", "轮岗"]),
-    ("POOL", ["人才池", "高潜", "后备池", "专家池", "入池", "出池"]),
-    ("STANDARD", ["任职资格", "人才标准", "匹配度", "够不够格", "胜任",
-                  "晋升", "下一职级", "晋升评审"]),
-    ("COMPETENCY", ["能力", "差距", "画像", "能力模型"]),
+    ("IDP", ["IDP", "idp", "个人发展计划", "发展计划"]),
+    ("PLACEMENT", ["任用", "晋升建议", "调整建议", "人员调整", "晋升名单",
+                   "提拔", "淘汰", "保留方案"]),
+    ("SUCCESSION", ["继任", "接班", "梯队", "后备", "关键岗位"]),
+    ("POOL", ["人才池", "池子", "入池", "出池"]),
+    ("PROGRAM", ["发展项目", "培养项目", "行动学习", "训练营", "轮岗", "内训"]),
+    ("MODEL", ["胜任力", "素质模型", "能力模型", "能力项"]),
+    ("REVIEW", ["盘点", "九宫格", "人才地图", "高潜", "360", "明星", "短板"]),
+    ("STANDARD", ["任职资格", "人才标准", "匹配度", "够不够格", "晋升",
+                  "下一职级", "晋升评审"]),
+    ("COMPETENCY", ["能力", "差距", "画像"]),
 ]
 
 
@@ -166,7 +177,22 @@ def org_dev_node(state: AgentState) -> dict:
     try:
         department = state.get("department")
         period = state.get("period")
-        if action == "CHANGE":
+        if action == "DIAGNOSIS":
+            result = organization_tool.run_org_diagnosis(
+                db, message, department=department, period=period
+            )
+            topic = "OD_DIAGNOSIS"
+        elif action == "CULTURE":
+            result = organization_tool.run_org_culture(
+                db, message, department=department, period=period
+            )
+            topic = "OD_CULTURE"
+        elif action == "STRATEGY":
+            result = organization_tool.run_strategy_decode(
+                db, message, department=department, period=period
+            )
+            topic = "OD_STRATEGY"
+        elif action == "CHANGE":
             result = organization_tool.run_org_change(db, message, department=department)
             topic = "OD_CHANGE"
         elif action == "ARCHITECTURE":
@@ -204,15 +230,40 @@ def talent_dev_node(state: AgentState) -> dict:
         department = state.get("department")
         employee_name = state.get("employee_name")
         job_level = state.get("job_level")
+        period = state.get("period")
         if action == "MENTORSHIP":
             result = talent_development_tool.run_mentorship(db, message, department=department)
             topic = "TD_MENTORSHIP"
-        elif action == "PROGRAM":
-            result = talent_development_tool.run_development_program(db, message)
-            topic = "TD_PROGRAM"
+        elif action == "IDP":
+            result = talent_development_tool.run_idp(
+                db, message, employee_name=employee_name,
+                department=department, period=period,
+            )
+            topic = "TD_IDP"
+        elif action == "PLACEMENT":
+            result = talent_development_tool.run_talent_placement(
+                db, message, department=department, period=period
+            )
+            topic = "TD_PLACEMENT"
+        elif action == "SUCCESSION":
+            result = talent_development_tool.run_succession(db, message, department=department)
+            topic = "TD_SUCCESSION"
         elif action == "POOL":
             result = talent_development_tool.run_talent_pool(db, message, department=department)
             topic = "TD_POOL"
+        elif action == "PROGRAM":
+            result = talent_development_tool.run_development_program(db, message)
+            topic = "TD_PROGRAM"
+        elif action == "MODEL":
+            result = talent_development_tool.run_competency_model(
+                db, message, employee_name=employee_name, job_level=job_level
+            )
+            topic = "TD_MODEL"
+        elif action == "REVIEW":
+            result = talent_development_tool.run_talent_review(
+                db, message, department=department, period=period, job_level=job_level
+            )
+            topic = "TD_REVIEW"
         elif action == "STANDARD":
             result = talent_development_tool.run_talent_standard_match(
                 db,
