@@ -13,7 +13,8 @@
 **关键词**：`OD 组织发展` `TD 人才发展` `组织诊断` `战略解码` `人才盘点九宫格`
 `胜任力模型` `继任梯队` `IDP` `HRIS` `LangGraph` `FastAPI` `AI Agent`
 
-- 仓库：<https://gitee.com/zlg1618/smart-talent-agent>
+- 主仓库（GitHub）：<https://github.com/zlg1618/smart-talent-agent>
+- 镜像仓库（Gitee）：<https://gitee.com/zlg1618/smart-talent-agent>
 - 许可：MIT
 - 可视化看板：启动服务后访问 <http://127.0.0.1:8000/ui/>
 
